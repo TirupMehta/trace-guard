@@ -7,7 +7,7 @@
 ![build](https://img.shields.io/badge/build-passing-brightgreen)
 
 > [!IMPORTANT]
-> **STABLE BASELINE (v4.0.0)**: Trace Guard has reached its first production-ready health baseline. The project now includes a formalized security policy, contribution guidelines, and an ISC license. The behavioral engine is tuned to eliminate human false positives while maintaining 100% block rates for agentic browsers.
+> **STABLE BASELINE (v3.6.2)**: Trace Guard has reached its first production-ready health baseline. The project now includes a formalized security policy, contribution guidelines, and an ISC license. The behavioral engine is tuned to eliminate human false positives while maintaining 100% block rates for agentic browsers.
 
 Add one line to your server. That's it. Trace Guard silently intercepts every HTTP/HTTPS request, injects a behavioral telemetry script, and blocks bots — including sophisticated agentic browsers driven by Vision-Language Models (VLMs, Playwright, Puppeteer, Claude Computer Use).
 

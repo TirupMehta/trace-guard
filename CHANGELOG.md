@@ -2,7 +2,7 @@
 
 All notable changes to Trace Guard will be documented in this file.
 
-## [4.0.0] - 2026-04-17
+## [3.6.2] - 2026-04-17
 ### Added
 - **SECURITY.md**: Official security policy for vulnerability reporting.
 - **CONTRIBUTING.md**: Guidelines for external contributors.
