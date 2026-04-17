@@ -1,0 +1,47 @@
+{
+  "name": "trace-guard",
+  "version": "3.6.2",
+  "description": "Zero-setup, autonomous AI-agent detection via behavioral entropy and physiological signatures.",
+  "main": "dist/src/index.js",
+  "types": "dist/src/index.d.ts",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/tirupmehta/trace-guard"
+  },
+  "bugs": {
+    "url": "https://github.com/tirupmehta/trace-guard/issues"
+  },
+  "homepage": "https://github.com/tirupmehta/trace-guard#readme",
+  "files": [
+    "dist/src",
+    "README.md"
+  ],
+  "scripts": {
+    "test": "jest",
+    "build": "tsc",
+    "prepublishOnly": "npm run build && npm test",
+    "benchmark": "npx ts-node scripts/benchmark.ts"
+  },
+  "keywords": [
+    "bot-detection",
+    "ai-agent-detection",
+    "human-verification",
+    "anti-bot",
+    "security",
+    "middleware",
+    "captcha-alternative",
+    "mouse-tracking",
+    "behavioral-analysis",
+    "tls-fingerprinting"
+  ],
+  "author": "Tirup Mehta <tirupmehta1@gmail.com>",
+  "license": "ISC",
+  "type": "commonjs",
+  "devDependencies": {
+    "@types/jest": "^30.0.0",
+    "@types/node": "^25.6.0",
+    "jest": "^30.3.0",
+    "ts-jest": "^29.4.9",
+    "typescript": "^5.6.3"
+  }
+}
