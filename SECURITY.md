@@ -14,6 +14,6 @@ Only the latest stable release of Trace Guard is supported for security updates.
 
 As Trace Guard is a security tool, we take vulnerability reports seriously. If you find a security issue, please do NOT create a public issue. 
 
-Email your discovery to **tirupmehta1@gmail.com**. You can expect a response within 48 hours.
+Email your discovery to **contact@tirup.in**. You can expect a response within 48 hours.
 
 We follow a coordinated disclosure policy and will credit you in the official security release.
