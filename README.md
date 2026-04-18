@@ -2,12 +2,13 @@
 
 ![npm version](https://img.shields.io/npm/v/trace-guard)
 ![license](https://img.shields.io/npm/l/trace-guard?color=blue)
+![supply chain](https://img.shields.io/badge/supply%20chain-100%25-brightgreen)
 ![snyk health](https://img.shields.io/badge/snyk%20health-verified-brightgreen)
 ![maintenance](https://img.shields.io/badge/maintenance-sustainable-orange)
 ![build](https://img.shields.io/badge/build-passing-brightgreen)
 
 > [!IMPORTANT]
-> **STABLE BASELINE (v3.6.2)**: Trace Guard has reached its first production-ready health baseline. The project now includes a formalized security policy, contribution guidelines, and an ISC license. The behavioral engine is tuned to eliminate human false positives while maintaining 100% block rates for agentic browsers.
+> **STABLE BASELINE (v3.6.4)**: Supply Chain Security score is now 100/100 on Socket.dev. The behavioral engine no longer penalizes slow or straight human mouse movement. Detection has been hardened with two new non-kinematic vectors: Event-Loop Clumping analysis and WebGL headless renderer fingerprinting.
 
 Add one line to your server. That's it. Trace Guard silently intercepts every HTTP/HTTPS request, injects a behavioral telemetry script, and blocks bots — including sophisticated agentic browsers driven by Vision-Language Models (VLMs, Playwright, Puppeteer, Claude Computer Use).
 
@@ -57,11 +58,21 @@ Incoming Request
       │
       ▼
 ┌─────────────────────────────────────────────────────────┐
-│  TIER 2: Physiological Kinematic Analysis               │
+│  TIER 1b: Automation Fingerprinting                      │
+│  → navigator.webdriver detection                         │
+│  → WebGL renderer unmasking (SwiftShader/LLVMpipe/Mesa) │
+│  → Native prototype poisoning detection                  │
+└─────────────────────────────────────────────────────────┘
+      │
+      ▼
+┌─────────────────────────────────────────────────────────┐
+│  TIER 2: Physiological & Temporal Analysis               │
 │  → Acceleration Asymmetry (biological push/pull)         │
 │  → Jerk Entropy / Structure Function DFA                 │
+│  → Event-Loop Clumping (performance.now() variance)      │
 │  → Dwell-Time Variance (human reading pauses)           │
 │  → Teleportation Detection (physically impossible jumps) │
+│  → AI Agent Cadence (Think-Act step pattern)            │
 └─────────────────────────────────────────────────────────┘
       │
       ▼
@@ -117,13 +128,14 @@ const guard = new TraceGuardAI();
 // Analyze a session manually
 const result = guard.analyzeSession(
   'ja4_fingerprint_string',  // JA4 TLS fingerprint
-  mouseEventsArray,          // Array of { x, y, t } mouse events
+  mouseEventsArray,          // Array of { x, y, t, p? } mouse events
   { decoyTriggered: false }  // Optional: true if honey-prompt was clicked
 );
 
 console.log(result);
 // { score: 0.1, decision: 'allow', reason: 'CONSISTENT_HUMAN_TRAJECTORY' }
-// { score: 0.8, decision: 'challenge', reason: 'BEHAVIORAL_SYMMETRY_DETECTED' }
+// { score: 1.0, decision: 'block', reason: 'WEBGL_SOFTWARE_RENDERER_DETECTED' }
+// { score: 1.0, decision: 'block', reason: 'EVENT_LOOP_CLUMPING_DETECTED' }
 // { score: 1.0, decision: 'block', reason: 'JA4_PROTOCOL_MATCH_SCRIPT' }
 // { score: 1.0, decision: 'block', reason: 'TELEPORTATION_DETECTED' }
 // { score: 1.0, decision: 'block', reason: 'HONEY_PROMPT_TRIGGERED' }
@@ -138,8 +150,11 @@ console.log(result);
 | Parameter | Type | Description |
 |---|---|---|
 | `ja4` | `string` | JA4 TLS fingerprint string from the client connection. |
-| `mouseEvents` | `MouseEvent[]` | Array of `{ x: number, y: number, t: number }` pointer events. |
+| `mouseEvents` | `MouseEvent[]` | Array of `{ x: number, y: number, t: number, p?: number }` pointer events. `p` is `performance.now()` for Event-Loop Clumping analysis. |
 | `options.decoyTriggered` | `boolean?` | Set `true` if the client interacted with the VLM honey-prompt. |
+| `options.automation` | `object?` | Automation signals from the browser (`webdriver`, `headless`, `softwareRenderer`, `nativePatched`). |
+| `options.challengeSolved` | `boolean?` | Set `true` when user passes the Turing challenge modal. |
+| `options.isMobile` | `boolean?` | Enables mobile-specific kinematic analysis (arc deviation, touch pressure). |
 
 Returns `{ score: number, decision: 'allow' | 'challenge' | 'block', reason: string }`.
 
@@ -149,11 +164,17 @@ Returns `{ score: number, decision: 'allow' | 'challenge' | 'block', reason: str
 |---|---|---|
 | `CONSISTENT_HUMAN_TRAJECTORY` | — | All signals pass. Session is allowed. |
 | `JA4_PROTOCOL_MATCH_SCRIPT` | 1 | Known script client (curl, python-requests). Instant block. |
+| `AUTOMATION_WEBDRIVER_DETECTION` | 1 | `navigator.webdriver` is `true`. High-confidence automation signal. |
+| `WEBGL_SOFTWARE_RENDERER_DETECTED` | 1 | GPU is a software renderer (SwiftShader/LLVMpipe). Headless VM proof. |
+| `NATIVE_PROTOTYPE_POISONING` | 1 | Browser native functions have been monkey-patched by a stealth plugin. |
+| `HEADLESS_BROWSER_ANOMALY` | 1 | User-agent or Chrome flags indicate headless mode. |
 | `TELEPORTATION_DETECTED` | 2 | Physically impossible cursor jumps. Universal block. |
-| `BEHAVIORAL_SYMMETRY_DETECTED` | 2 | Symmetric acceleration ratio — bot-like interpolation. |
-| `LACKS_BIOLOGICAL_JITTER` | 2 | Zero-variance constant-velocity movement. |
-| `MULTI_SIGNAL_ANOMALY_UNKNOWN_CLIENT` | 2 | Unknown JA4 client showing ≥2 bot signals. |
-| `INSUFFICIENT_BEHAVIORAL_SIGNAL` | 2 | Zero path length — no movement data. |
+| `EVENT_LOOP_CLUMPING_DETECTED` | 2 | Events share identical microsecond timestamps — proof of DOM injection. |
+| `AGENT_CADENCE_DETECTED` | 2 | Think-Act step timing pattern consistent with agentic browsers. |
+| `LACKS_BIOLOGICAL_JITTER` | 2 | Absolute zero-variance constant-velocity movement (threshold < 0.001). |
+| `EXCESSIVE_SMOOTHNESS_DETECTION` | 2 | Mathematically perfect Bezier curve smoothness — physically impossible. |
+| `BIOLOGICAL_TREMOR_VERIFIED` | 2 | IRI pattern confirms biological hand tremor. Reduces score. |
+| `INSUFFICIENT_BEHAVIORAL_SIGNAL` | 2 | Zero path length — no movement data collected yet. |
 | `HONEY_PROMPT_TRIGGERED` | 3 | VLM agent interacted with DOM decoy. Instant block. |
 
 ### `BehavioralAnalyzer` (exported from `trace-guard/behavioral`)
@@ -165,6 +186,9 @@ All methods are fully documented with JSDoc. Key public methods:
 - `calculateJerkEntropy(events)` — Structure Function DFA slope. Linear bots: ~0.
 - `calculateDwellTimeVariance(events)` — Variance of pause durations. Humans: high.
 - `calculateTeleportationScore(events)` — Fraction of physically impossible jumps.
+- `calculateEventClumping(events)` — Variance of `performance.now()` deltas. DOM-injected bots: ~0.
+- `calculateTouchVariance(events)` — Variance of digitizer pressure/radius (mobile).
+- `calculateArcDeviation(events)` — Chord-to-arc ratio for thumb biomechanics (mobile).
 - `extractFeatures(events)` — All features in one optimized single-pass call.
 
 ---
@@ -173,7 +197,7 @@ All methods are fully documented with JSDoc. Key public methods:
 
 Trace Guard is designed to be **invisible** to the host application:
 
-- Monkey-patches `http.createServer` and `https.createServer` globally — no route changes needed.
+- Monkey-patches `http.createServer` globally — no route changes needed. Zero network-access dependencies.
 - Strips `Content-Length` from intercepted HTML responses to prevent truncation.
 - Handles gzip, deflate, and brotli compressed responses natively via Node's built-in `zlib` C-bindings.
 - Uses `position:fixed; z-index:2147483647` overlays — never destroys React/Angular Virtual DOM.
