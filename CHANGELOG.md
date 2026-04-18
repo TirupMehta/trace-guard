@@ -2,6 +2,10 @@
 
 All notable changes to Trace Guard will be documented in this file.
 
+## [3.6.5] - 2026-04-18
+### Changed
+- **README.md fully updated**: Detection tier diagram, Decision Reasons table, API reference, and Zero-Conflict section now accurately reflect the v3.6.4 architecture. Stale references to `BEHAVIORAL_SYMMETRY_DETECTED` and `https.createServer` removed.
+
 ## [3.6.4] - 2026-04-18
 ### Changed
 - **Supply Chain Hardening**: Removed `require('https')` import and all HTTPS server monkey-patching. Socket.dev static analysis flagged the `https` module import as a "Network Access" supply chain risk. The HTTPS patch was architecturally redundant — `http.createServer` patching covers the full request lifecycle. This fix brings the Supply Chain Security score to 100.
