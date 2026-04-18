@@ -18,9 +18,12 @@ export class TraceGuardAI {
         languages?: boolean,
         plugins?: boolean,
         notification?: boolean,
-        headless?: boolean
+        headless?: boolean,
+        softwareRenderer?: boolean,
+        nativePatched?: boolean,
       };
       challengeSolved?: boolean;
+      isMobile?: boolean; // Trace Guard mobile touch-event identifier
     }
   ): {
     score: number;
@@ -57,6 +60,14 @@ export class TraceGuardAI {
         totalScore += 25;
         reasons.push('INCONSISTENT_BROWSER_FEATURES');
       }
+      if (auto.softwareRenderer) {
+        totalScore += 100; // Unambiguous headless VM hardware flag
+        reasons.push('WEBGL_SOFTWARE_RENDERER_DETECTED');
+      }
+      if (auto.nativePatched) {
+        totalScore += 100; // Scripts overriding console or window functions
+        reasons.push('NATIVE_PROTOTYPE_POISONING');
+      }
     }
 
     // --- TIER 2: BEHAVIORAL & CADENCE SIGNALS ---
@@ -92,8 +103,8 @@ export class TraceGuardAI {
     let behavioralScore = 0;
 
     if (features.jerkEntropy !== null) {
-        if (features.jerkEntropy < 0.3) {
-            behavioralScore += 15; 
+        if (features.jerkEntropy < 0.001) { // Hardened threshold for trackpads
+            behavioralScore += 60; 
             reasons.push('LACKS_BIOLOGICAL_JITTER'); 
         } else if (features.jerkEntropy > 1.2) {
             behavioralScore += 10; 
@@ -102,40 +113,50 @@ export class TraceGuardAI {
     }
 
     if (features.isExcessivelySmooth) {
-        behavioralScore += 10; 
+        behavioralScore += 50; 
         reasons.push('EXCESSIVE_SMOOTHNESS_DETECTION');
     }
 
-    const isVertical = Math.abs(mouseEvents[mouseEvents.length - 1].y - mouseEvents[0].y) > 50;
-    const isHorizontal = Math.abs(mouseEvents[mouseEvents.length - 1].x - mouseEvents[0].x) > 50;
-    
-    // Inhuman Precision: Flags linear bots
-    const hasInhumanPrecision = ((features.accelAsymmetry >= 0.99 && features.accelAsymmetry <= 1.01)
-      || (features.accelAsymmetry === 0 && (isVertical || isHorizontal)));
-    
-    if (hasInhumanPrecision && features.mstLength > 50 && (isVertical || isHorizontal)) {
-      behavioralScore += 15; 
-      reasons.push('BEHAVIORAL_SYMMETRY_DETECTED'); 
+    // --- NEW: EVENT-LOOP DEFENSE ---
+    // If timing variance is identical or physically impossible, someone script-injected the DOM.
+    if (features.eventClumpingVariance !== null && features.eventClumpingVariance < 0.0001) {
+        behavioralScore += 100;
+        reasons.push('EVENT_LOOP_CLUMPING_DETECTED');
     }
 
     // Dwell variance: Mechanical regularity
     const hasMechanicalDwellPattern = features.dwellTimeVariance !== null
-      && features.dwellTimeVariance < 1;
+      && features.dwellTimeVariance < 0.1; // Trackpad precision grace
     
     if (hasMechanicalDwellPattern) {
       behavioralScore += 10;
       reasons.push('MECHANICAL_DWELL_PATTERN');
     }
 
-    // CAP BEHAVIOR: v3.6.0 Hardened Cap to 80 to allow behavioral-only blocks.
-    totalScore += Math.min(behavioralScore, 80);
+    // --- NEW: MOBILE VULNERABILITY & ARC DEFENSE ---
+    if (options?.isMobile) {
+      const isTouchEmulator = features.touchVariance !== null && features.touchVariance === 0;
+      if (isTouchEmulator && features.mstLength > 100) {
+        behavioralScore += 100;
+        reasons.push('STATIC_TOUCH_PRESSURE_ANOMALY');
+      }
+
+      const isLineBot = features.arcDeviation !== null && features.arcDeviation > 0 && features.arcDeviation < 1.005;
+      if (isLineBot && features.mstLength > 100) {
+        behavioralScore += 100;
+        reasons.push('LINEAR_SWIPE_ARC_ANOMALY');
+      }
+    }
+
+    // CAP BEHAVIOR: Hardened Cap to 100 to allow behavioral-only instant blocks.
+    totalScore += Math.min(behavioralScore, 100);
 
     // --- TIER 3: HUMANITY VERIFICATION (v3.5.1 HEAL) ---
     // Biological Tremor Verification: The proof of physical presence.
-    const hasCriticalBotSignal = !!(options?.automation?.webdriver || options?.automation?.headless || features.agentStepScore > 0.4);
+    const hasCriticalBotSignal = !!(options?.automation?.webdriver || options?.automation?.headless);
     
     if (features.isHumanVerified && !hasCriticalBotSignal) {
-      totalScore -= 30; // v3.6.0: Reduced from 40 to ensure high-entropy bots don't heal too fast
+      totalScore -= 40; // Restored from 30 to fully clear incidental challenge points for true humans
       reasons.push('BIOLOGICAL_TREMOR_VERIFIED');
     }
 

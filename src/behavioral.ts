@@ -2,6 +2,9 @@ export interface MouseEvent {
   x: number;
   y: number;
   t: number;
+  p?: number; // High-resolution performance.now() bounds
+  f?: number; // Touch force/pressure
+  r?: number; // Touch radius
 }
 
 export interface BehavioralFeatures {
@@ -38,6 +41,12 @@ export interface BehavioralFeatures {
    *  Set true if IRI (Inter-Reversal Interval) pattern matches human hand tremor.
    */
   isHumanVerified: boolean;
+  touchVariance: number | null;
+  arcDeviation: number | null;
+  /** Variance of high-resolution timing deltas.
+   *  0.0 = Synthetic DOM-injected event clump. 
+   */
+  eventClumpingVariance: number | null;
 }
 
 export class BehavioralAnalyzer {
@@ -196,7 +205,7 @@ export class BehavioralAnalyzer {
     if (events.length < 2) return 0;
 
     const TELEPORT_DIST_PX = 150;
-    const TELEPORT_TIME_MS = 10;
+    const TELEPORT_VELOCITY_PX_MS = 15;
 
     let teleports = 0;
     let total = 0;
@@ -207,12 +216,102 @@ export class BehavioralAnalyzer {
       if (dt < 0) continue; // malformed — skip
       const dist = Math.sqrt(dx * dx + dy * dy);
       total++;
-      if (dist > TELEPORT_DIST_PX && dt < TELEPORT_TIME_MS) {
+      if (dist > TELEPORT_DIST_PX && (dt === 0 || (dist / dt) > TELEPORT_VELOCITY_PX_MS)) {
         teleports++;
       }
     }
 
     return total > 0 ? teleports / total : 0;
+  }
+
+  /**
+   * Evaluates if pressure/force fluctuates, inherently proving biological flesh.
+   * If hardware does not supply unique pressure, it safely returns null.
+   */
+  public calculateTouchVariance(events: MouseEvent[]): number | null {
+    if (events.length < 3) return null;
+    
+    let sumF = 0;
+    let countF = 0;
+    
+    for (let i = 0; i < events.length; i++) {
+      if (events[i].f !== undefined && events[i].f !== 1 && events[i].f !== 0) {
+         sumF += events[i].f!;
+         countF++;
+      }
+    }
+    
+    if (countF < 3) return null; // No usable force hardware detected
+    
+    const mean = sumF / countF;
+    let varianceSq = 0;
+    for (let i = 0; i < events.length; i++) {
+      if (events[i].f !== undefined && events[i].f !== 1 && events[i].f !== 0) {
+         const diff = events[i].f! - mean;
+         varianceSq += diff * diff;
+      }
+    }
+    
+    return varianceSq / countF;
+  }
+
+  /**
+   * Calculates "Event-Loop Clumping".
+   * Synthetic Playwright bots inject batches of DOM events synchronously or with
+   * strict timer intervals. Organic mice interrupt the browser's RequestAnimationFrame
+   * with physical USB polling rate friction. 
+   * Near-zero variance here proves non-hardware scripting.
+   */
+  public calculateEventClumping(events: MouseEvent[]): number | null {
+    if (events.length < 5) return null;
+    
+    // We only evaluate if high-res performance data is available
+    if (events[0].p === undefined) return null;
+
+    const deltas: number[] = [];
+    for (let i = 1; i < events.length; i++) {
+        if (events[i].p !== undefined && events[i-1].p !== undefined) {
+             const dt = events[i].p! - events[i-1].p!;
+             // Discard long pauses so we only analyze active swiping payloads
+             if (dt < 100) {
+                 deltas.push(dt);
+             }
+        }
+    }
+
+    if (deltas.length < 3) return null;
+
+    let sum = 0; let sumSq = 0;
+    for (const d of deltas) {
+        sum += d;
+        sumSq += d * d;
+    }
+    const mean = sum / deltas.length;
+    const v = (sumSq / deltas.length) - (mean * mean);
+    return v < 0 ? 0 : v;
+  }
+
+  /**
+   * Detects "Thumb Arc" Biomechanics.
+   * Humans naturally swipe in a subtle arc because the thumb pivots at a joint constraints.
+   * Perfect straight lines (chord length == path length) are likely robotic macros.
+   */
+  public calculateArcDeviation(events: MouseEvent[], pathLength: number): number | null {
+    if (events.length < 3) return null;
+    if (pathLength === 0) return 0;
+
+    const first = events[0];
+    const last = events[events.length - 1];
+    
+    const dx = last.x - first.x;
+    const dy = last.y - first.y;
+    const straightLineDistance = Math.sqrt(dx * dx + dy * dy);
+    
+    if (straightLineDistance === 0) return null;
+
+    // The ratio of the actual MST path taken vs the direct geometric straight line
+    // 1.0 means perfectly linear. Humans typically produce ~1.01 to 1.10.
+    return pathLength / straightLineDistance;
   }
 
   public extractFeatures(events: MouseEvent[]): BehavioralFeatures {
@@ -229,6 +328,9 @@ export class BehavioralAnalyzer {
         isExcessivelySmooth: false,
         biologicalTremorScore: 0,
         isHumanVerified: false,
+        touchVariance: null,
+        arcDeviation: null,
+        eventClumpingVariance: null,
       };
     }
 
@@ -237,9 +339,9 @@ export class BehavioralAnalyzer {
     // asymmetry, dwell-time statistics, teleportation, and agent cadence.
     // -----------------------------------------------------------------------
     const TELEPORT_DIST_PX = 150;
-    const TELEPORT_TIME_MS = 10;
+    const TELEPORT_VELOCITY_PX_MS = 15;
     const DWELL_DIST_PX = 5;
-    const AGENT_THINK_THRESHOLD_MS = 400; // Hardened: typical VLM latency floor reduced to 400ms
+    const AGENT_THINK_THRESHOLD_MS = 400;
 
     let pathLength = 0;
     let sumUp = 0, countUp = 0, sumDown = 0, countDown = 0;
@@ -264,7 +366,7 @@ export class BehavioralAnalyzer {
       // Teleportation & Movement check
       if (dt >= 0) {
         totalMoves++;
-        if (dist > TELEPORT_DIST_PX && dt < TELEPORT_TIME_MS) {
+        if (dist > TELEPORT_DIST_PX && (dt === 0 || (dist / dt) > TELEPORT_VELOCITY_PX_MS)) {
           teleports++;
         }
 
@@ -340,7 +442,7 @@ export class BehavioralAnalyzer {
     const avgVelocity = duration > 0 ? pathLength / duration : 0;
 
     // Agent Step Score: Ratio of Think-Act transitions to total moves (normalized)
-    const agentStepScore = totalMoves > 5 ? Math.min((thinkPauses + activeBursts) / 10, 1.0) : 0;
+    const agentStepScore = totalMoves > 5 ? (thinkPauses + activeBursts) / totalMoves : 0;
 
     // Path Hash: DJB2 hash of the unique coordinate sequence
     // v3.4.2 Protection: Only hash significant paths (> 20px) to avoid twitch collisions.
@@ -418,6 +520,9 @@ export class BehavioralAnalyzer {
       isExcessivelySmooth,
       biologicalTremorScore,
       isHumanVerified,
+      touchVariance: this.calculateTouchVariance(events),
+      arcDeviation: this.calculateArcDeviation(events, pathLength),
+      eventClumpingVariance: this.calculateEventClumping(events)
     };
   }
 

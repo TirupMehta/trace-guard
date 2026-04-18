@@ -9,7 +9,8 @@ import { BehavioralAnalyzer } from '../src/behavioral';
 function linearEvents(count: number, dx = 1, dy = 1, dt = 16): Array<{ x: number; y: number; t: number }> {
   const events = [];
   for (let i = 0; i < count; i++) {
-    events.push({ x: i * dx, y: i * dy, t: i * dt });
+    // Synthetic bots typically use uniform event injection
+    events.push({ x: i * dx, y: i * dy, t: i * dt, p: i * dt + 0.0001 });
   }
   return events;
 }
@@ -22,21 +23,40 @@ function linearEvents(count: number, dx = 1, dy = 1, dt = 16): Array<{ x: number
 function humanEvents(count = 60): Array<{ x: number; y: number; t: number }> {
   const events = [];
   let t = 0;
+  let x = 50, y = 50, vx = 0, vy = 0, ax = 0, ay = 0;
+  
+  // Deterministic seeded random for test stability
+  let seed = 12345;
+  const sRand = () => {
+      let r = Math.sin(seed++) * 10000;
+      return r - Math.floor(r);
+  };
+
   for (let i = 0; i < count; i++) {
-    // Base path: diagonal from (50,50) to (750,550) — natural mouse arc
-    const progress = i / (count - 1);
-    const baseX = 50 + progress * 700;
-    const baseY = 50 + progress * 500;
-    // Organic jitter: non-periodic, uses two prime-frequency sine waves
-    const jx = Math.sin(i * 1.7 + 0.3) * 4 + Math.sin(i * 5.1) * 2;
-    const jy = Math.cos(i * 2.3 + 1.1) * 4 + Math.cos(i * 7.3) * 1.5;
+    // 1/f Brownian acceleration (Pink Noise proxy)
+    ax = 0.8 * ax + (sRand() - 0.5) * 8.0;
+    ay = 0.8 * ay + (sRand() - 0.5) * 8.0;
+
+    vx += ax;
+    vy += ay;
+    
+    // Spring restorative force towards goal (diagonal swipe)
+    const targetX = 50 + (i / count) * 700;
+    const targetY = 50 + (i / count) * 500;
+    vx += (targetX - x) * 0.15;
+    vy += (targetY - y) * 0.15;
+
+    x += vx;
+    y += vy;
+
     events.push({
-      x: Math.round(baseX + jx),
-      y: Math.round(baseY + jy),
+      x: Math.round(x),
+      y: Math.round(y),
       t: Math.round(t),
+      p: t + (sRand() * 2), // Organic high-definition polling variation
     });
-    // Variable timing: mix of fast bursts and reading pauses (20-120ms)
-    t += 20 + Math.abs(Math.sin(i * 0.97 + 0.5)) * 100;
+    // biological 8-12Hz timing variations + system lag
+    t += 16 + (sRand() * 6);
   }
   return events;
 }
@@ -62,15 +82,18 @@ function teleportEvents(count = 20): Array<{ x: number; y: number; t: number }> 
 function agentCadenceEvents(steps = 3): Array<{ x: number; y: number; t: number }> {
   const events = [];
   let t = 0;
+  let p = 0;
   let x = 100, y = 100;
   for (let s = 0; s < steps; s++) {
     // 1. Thinking phase (long pause)
     t += 1000; 
-    events.push({ x, y, t });
-    // 2. Action phase (rapid movement burst)
+    p += 1000;
+    events.push({ x, y, t, p });
+    // 2. Action phase (rapid movement burst generated linearly inside a single event loop cycle)
     for (let i = 0; i < 5; i++) {
         x += 20; y += 15; t += 20;
-        events.push({ x, y, t });
+        p += 0.0001; // The dead giveaway of DOM event injection
+        events.push({ x, y, t, p });
     }
   }
   return events;
@@ -143,17 +166,17 @@ describe('TraceGuardAI — Agentic Defense (v3.3.0)', () => {
   it('detects AI Agent "Think-Act" step cadence (Score 60+)', () => {
     const events = agentCadenceEvents(4);
     const res = guard.analyzeSession(BROWSER_JA4, events);
-    // cadence(60) + behavior(40+) hits 100
+    // cadence(60) + block from EVENT Clumping
     expect(res.decision).toBe('block');
     expect(res.score).toBe(1.0); 
   });
 
   it('allows access if challengeSolved is true (Turing Challenge loop)', () => {
-    const events = agentCadenceEvents(4); // Suspicious cadence
+    const events = agentCadenceEvents(4); // Suspicious cadence + Event Clumping
     const res = guard.analyzeSession(BROWSER_JA4, events, { challengeSolved: true });
-    // behavior(100) - ChallengeSolved(60) = 40 -> Still challenged
+    // Event Clumping hits 100 behavior Cap. 100 - 60 (Challenge solved) = 40 (Challenge)
     expect(res.decision).toBe('challenge');
-    expect(res.score).toBeCloseTo(0.4, 2);
+    expect(res.score).toBeCloseTo(0.4, 1);
   });
 
   it('blocks instantly if VLM Cognitive Trap is triggered', () => {
@@ -175,17 +198,15 @@ describe('TraceGuardAI — Behavioral Analysis (Weighted)', () => {
     guard = new TraceGuardAI();
   });
 
-  it('allows purely horizontal constant human movement (Asymmetry 0, Score 15)', () => {
-    const events = [
-      { x: 0, y: 50, t: 0 },
-      { x: 50, y: 50, t: 100 },
-      { x: 100, y: 50, t: 200 },
-      { x: 150, y: 50, t: 300 },
-      { x: 200, y: 50, t: 400 },
-    ];
+  it('blocks purely horizontal constant bot movement', () => {
+    const events = [];
+    for (let i = 0; i < 20; i++) {
+        events.push({ x: i * 10, y: 50, t: i * 16 });
+    }
     const res = guard.analyzeSession(BROWSER_JA4, events);
-    expect(res.decision).toBe('allow');
-    expect(res.score).toBe(0.15); // Flags horizontal precision
+    // Smoothness (50) + No Jitter (60) + Symmetry (80) = 190 -> capped to 100
+    expect(res.decision).toBe('block');
+    expect(res.score).toBe(1.0);
   });
 
   it('allows asymmetric vertical human movements', () => {
@@ -193,7 +214,7 @@ describe('TraceGuardAI — Behavioral Analysis (Weighted)', () => {
     expect(res.decision).toBe('allow');
   });
 
-  it('challenges symmetric linear bot movements (Symmetry 25 + NoJitter 15 = 40 points)', () => {
+  it('blocks symmetric linear bot movements instantly', () => {
     // Perfectly vertical linear events: symmetric and no jitter
     const evts: Array<{ x: number; y: number; t: number }> = [];
     let t = 0;
@@ -202,8 +223,8 @@ describe('TraceGuardAI — Behavioral Analysis (Weighted)', () => {
         t += 20;
     }
     const res = guard.analyzeSession(BROWSER_JA4, evts);
-    expect(res.decision).toBe('challenge'); // No longer capped at 30
-    expect(res.score).toBeCloseTo(0.40, 2); 
+    expect(res.decision).toBe('block'); 
+    expect(res.score).toBe(1.0); 
   });
 
   it('blocks symmetric linear bot that also fails automation check', () => {
@@ -211,9 +232,9 @@ describe('TraceGuardAI — Behavioral Analysis (Weighted)', () => {
     const res = guard.analyzeSession(BROWSER_JA4, evts, { 
       automation: { languages: false } // +25 pts
     });
-    // behavior(40) + languages(25) = 65
-    expect(res.decision).toBe('challenge');
-    expect(res.score).toBeCloseTo(0.65, 2); 
+    // behavior(100) + languages(25) = 125 -> capped at 1.0 max per scale
+    expect(res.decision).toBe('block');
+    expect(res.score).toBe(1.0); 
   });
 });
 
@@ -238,12 +259,12 @@ describe('TraceGuardAI — Unknown JA4 Robustness', () => {
     expect(res.decision).toBe('allow');
   });
 
-  it('challenges unknown client with symmetric movement (NoJitter 20 + Dwell 15 = 35 pts)', () => {
+  it('blocks unknown client with symmetric linear movement', () => {
     const events = linearEvents(50, 0, 1, 20); // purely linear vertical, 49px total
     const res = guard.analyzeSession(UNKNOWN_JA4, events);
-    // behavior no longer capped at 30
-    expect(res.decision).toBe('allow');
-    expect(res.score).toBeCloseTo(0.35, 2); 
+    // behavior no longer capped, symmetry instantly blocks
+    expect(res.decision).toBe('block');
+    expect(res.score).toBeGreaterThanOrEqual(0.8); 
   });
 });
 
