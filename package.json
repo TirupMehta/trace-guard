@@ -1,6 +1,6 @@
 {
   "name": "trace-guard",
-  "version": "3.6.5",
+  "version": "3.6.6",
   "description": "Zero-setup, autonomous AI-agent detection via behavioral entropy and physiological signatures.",
   "main": "dist/src/index.js",
   "types": "dist/src/index.d.ts",
