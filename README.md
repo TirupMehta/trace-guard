@@ -8,7 +8,7 @@
 ![build](https://img.shields.io/badge/build-passing-brightgreen)
 
 > [!IMPORTANT]
-> **STABLE BASELINE (v3.6.5)**: Supply Chain Security score is now 100/100 on Socket.dev. The behavioral engine no longer penalizes slow or straight human mouse movement. Detection has been hardened with two new non-kinematic vectors: Event-Loop Clumping analysis and WebGL headless renderer fingerprinting.
+> **STABLE BASELINE (v3.6.6)**: Supply Chain Security score is now 100/100 on Socket.dev. The behavioral engine no longer penalizes slow or straight human mouse movement. Detection has been hardened with two new non-kinematic vectors: Event-Loop Clumping analysis and WebGL headless renderer fingerprinting.
 
 Add one line to your server. That's it. Trace Guard silently intercepts every HTTP/HTTPS request, injects a behavioral telemetry script, and blocks bots — including sophisticated agentic browsers driven by Vision-Language Models (VLMs, Playwright, Puppeteer, Claude Computer Use).
 

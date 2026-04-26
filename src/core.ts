@@ -46,6 +46,12 @@ export class TraceGuardAI {
 
     // --- TIER 1: AUTOMATION & AGENT SIGNALS ---
 
+    const hasUntrustedEvents = mouseEvents.some(e => e.tr === false);
+    if (hasUntrustedEvents) {
+      totalScore += 100;
+      reasons.push('UNTRUSTED_DOM_EVENTS');
+    }
+
     if (options?.automation) {
       const auto = options.automation;
       if (auto.webdriver) {
@@ -145,6 +151,13 @@ export class TraceGuardAI {
       if (isLineBot && features.mstLength > 100) {
         behavioralScore += 100;
         reasons.push('LINEAR_SWIPE_ARC_ANOMALY');
+      }
+    } else {
+      // Desktop Strict Linear Check
+      const isLineBotDesktop = features.arcDeviation !== null && features.arcDeviation > 0 && features.arcDeviation < 1.0001;
+      if (isLineBotDesktop && features.mstLength > 100) {
+        behavioralScore += 100;
+        reasons.push('PERFECT_LINEAR_TRAJECTORY');
       }
     }
 

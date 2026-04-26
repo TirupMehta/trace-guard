@@ -213,7 +213,7 @@ const SCRIPT_TO_INJECT = `
   window.addEventListener('mousemove', e => {
     if (isMobile) return; // Prevent double-firing on some touch-hybrid mobile frameworks
     if (events.length < 50) {
-      events.push({ x: e.clientX, y: e.clientY, t: Date.now(), p: performance.now() });
+      events.push({ x: e.clientX, y: e.clientY, t: Date.now(), p: performance.now(), tr: e.isTrusted });
       if (events.length === 50) dispatchValidation();
     }
   }, {passive: true});
@@ -230,7 +230,8 @@ const SCRIPT_TO_INJECT = `
         t: Date.now(),
         p: performance.now(),
         f: touch.force || 0,
-        r: touch.radiusX || 0
+        r: touch.radiusX || 0,
+        tr: e.isTrusted
       });
     }
   }, {passive: true});

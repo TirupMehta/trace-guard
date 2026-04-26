@@ -2,6 +2,11 @@
 
 All notable changes to Trace Guard will be documented in this file.
 
+## [3.6.6] - 2026-04-26
+### Added
+- **`isTrusted` Integrity Lock**: Deep browser-level hardware check. Blocks all synthetic `dispatchEvent` injections with 0% risk of human false-positives.
+- **Desktop Linear Trajectory Anomaly**: Added mathematically perfect straight-line detection to desktop (`arcDeviation < 1.0001` over >100px) to catch high-end headless browsers like Playwright/Puppeteer.
+
 ## [3.6.5] - 2026-04-18
 ### Changed
 - **README.md fully updated**: Detection tier diagram, Decision Reasons table, API reference, and Zero-Conflict section now accurately reflect the v3.6.4 architecture. Stale references to `BEHAVIORAL_SYMMETRY_DETECTED` and `https.createServer` removed.

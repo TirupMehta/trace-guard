@@ -5,6 +5,7 @@ export interface MouseEvent {
   p?: number; // High-resolution performance.now() bounds
   f?: number; // Touch force/pressure
   r?: number; // Touch radius
+  tr?: boolean; // Event isTrusted
 }
 
 export interface BehavioralFeatures {
