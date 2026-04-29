@@ -8,7 +8,7 @@
 ![build](https://img.shields.io/badge/build-passing-brightgreen)
 
 > [!IMPORTANT]
-> **STABLE BASELINE (v3.6.6)**: Supply Chain Security score is now 100/100 on Socket.dev. The behavioral engine no longer penalizes slow or straight human mouse movement. Detection has been hardened with two new non-kinematic vectors: Event-Loop Clumping analysis and WebGL headless renderer fingerprinting.
+> **STABLE BASELINE (v3.6.7)**: Supply Chain Security score is 100/100 on Socket.dev. Horizontal linear bot movement (previously a blind spot) is now caught via universal arc-deviation analysis. All-synthetic event session injection now emits a distinct `ALL_EVENTS_SYNTHETIC_INJECTION` signal. Fast-path optimization skips behavioral analysis for already-confirmed bots.
 
 Add one line to your server. That's it. Trace Guard silently intercepts every HTTP/HTTPS request, injects a behavioral telemetry script, and blocks bots — including sophisticated agentic browsers driven by Vision-Language Models (VLMs, Playwright, Puppeteer, Claude Computer Use).
 
@@ -168,13 +168,22 @@ Returns `{ score: number, decision: 'allow' | 'challenge' | 'block', reason: str
 | `WEBGL_SOFTWARE_RENDERER_DETECTED` | 1 | GPU is a software renderer (SwiftShader/LLVMpipe). Headless VM proof. |
 | `NATIVE_PROTOTYPE_POISONING` | 1 | Browser native functions have been monkey-patched by a stealth plugin. |
 | `HEADLESS_BROWSER_ANOMALY` | 1 | User-agent or Chrome flags indicate headless mode. |
-| `TELEPORTATION_DETECTED` | 2 | Physically impossible cursor jumps. Universal block. |
+| `INCONSISTENT_BROWSER_FEATURES` | 1 | `navigator.languages` or `navigator.plugins` absent — headless environment. |
+| `UNTRUSTED_DOM_EVENTS` | 1 | One or more events have `isTrusted=false` — scripted event injection detected. |
+| `ALL_EVENTS_SYNTHETIC_INJECTION` | 1 | Every event in the session has `isTrusted=false` — full session is fabricated. |
+| `TELEPORTATION_DETECTED` | 2 | Physically impossible cursor jumps (>150px in <10ms). Universal block. |
 | `EVENT_LOOP_CLUMPING_DETECTED` | 2 | Events share identical microsecond timestamps — proof of DOM injection. |
 | `AGENT_CADENCE_DETECTED` | 2 | Think-Act step timing pattern consistent with agentic browsers. |
 | `LACKS_BIOLOGICAL_JITTER` | 2 | Absolute zero-variance constant-velocity movement (threshold < 0.001). |
 | `EXCESSIVE_SMOOTHNESS_DETECTION` | 2 | Mathematically perfect Bezier curve smoothness — physically impossible. |
-| `BIOLOGICAL_TREMOR_VERIFIED` | 2 | IRI pattern confirms biological hand tremor. Reduces score. |
-| `INSUFFICIENT_BEHAVIORAL_SIGNAL` | 2 | Zero path length — no movement data collected yet. |
+| `PERFECT_LINEAR_TRAJECTORY` | 2 | Arc deviation < 1.002 on desktop — geometrically perfect path (any axis). |
+| `LINEAR_SWIPE_ARC_ANOMALY` | 2 | Arc deviation < 1.005 on mobile — robotic straight-line swipe. |
+| `REPLAY_ATTACK_DETECTED` | 2 | Identical path hash seen in a previous session — pre-recorded human replay. |
+| `MECHANICAL_DWELL_PATTERN` | 2 | Near-zero variance in pause durations — constant-velocity bot. |
+| `STATIC_TOUCH_PRESSURE_ANOMALY` | 2 | Touch pressure is identically 0 throughout — touch emulator. |
+| `BIOLOGICAL_TREMOR_VERIFIED` | 2 | IRI pattern confirms biological hand tremor. Reduces score by 40pts. |
+| `INSUFFICIENT_BEHAVIORAL_SIGNAL` | 2 | Zero path length — no movement data collected yet. Challenge issued. |
+| `CHALLENGE_SOLVED_BY_USER` | — | User solved the Turing challenge. Reduces score by 60pts. |
 | `HONEY_PROMPT_TRIGGERED` | 3 | VLM agent interacted with DOM decoy. Instant block. |
 
 ### `BehavioralAnalyzer` (exported from `trace-guard/behavioral`)

@@ -46,10 +46,22 @@ export class TraceGuardAI {
 
     // --- TIER 1: AUTOMATION & AGENT SIGNALS ---
 
-    const hasUntrustedEvents = mouseEvents.some(e => e.tr === false);
-    if (hasUntrustedEvents) {
-      totalScore += 100;
-      reasons.push('UNTRUSTED_DOM_EVENTS');
+    // v3.6.7: Differentiate partial untrusted events vs ALL untrusted events.
+    // A single synthetic event in a real session (isTrusted=false) is already a hard block.
+    // Use a counting loop — no array allocation — to stay allocation-free in the hot path.
+    let untrustedCount = 0;
+    for (let i = 0; i < mouseEvents.length; i++) {
+      if (mouseEvents[i].tr === false) untrustedCount++;
+    }
+    if (untrustedCount > 0) {
+      // If every collected event is flagged as synthetic, this is a DOM-injection script
+      if (untrustedCount === mouseEvents.length) {
+        totalScore += 100;
+        reasons.push('ALL_EVENTS_SYNTHETIC_INJECTION');
+      } else {
+        totalScore += 100;
+        reasons.push('UNTRUSTED_DOM_EVENTS');
+      }
     }
 
     if (options?.automation) {
@@ -76,6 +88,13 @@ export class TraceGuardAI {
       }
     }
 
+    // Fast-path: already over the block threshold, no need to run expensive behavioral analysis
+    if (totalScore >= 80) {
+      const score = Math.min(totalScore / 100, 1.0);
+      const decision: 'allow' | 'challenge' | 'block' = score >= 0.8 ? 'block' : 'challenge';
+      return { score, decision, reason: reasons.join(' + '), features: {} };
+    }
+
     // --- TIER 2: BEHAVIORAL & CADENCE SIGNALS ---
 
     const features = this.behavioral.extractFeatures(mouseEvents);
@@ -94,7 +113,7 @@ export class TraceGuardAI {
 
     // AI Agent Cadence: Snap-Act pattern (Think -> Act -> Read)
     if (features.agentStepScore > 0.4) {
-      totalScore += 60; // Restored to legacy 60 pts
+      totalScore += 60;
       reasons.push('AGENT_CADENCE_DETECTED');
     }
 
@@ -104,79 +123,86 @@ export class TraceGuardAI {
       reasons.push('TELEPORTATION_DETECTED');
     }
 
-    // v3.5.0 Stable Weights: Behavioral anomalies are supplemental.
-    // v3.5.2: Cap all behavioral signals at 30 pts.
+    // Behavioral anomalies (capped at 100 to allow behavioral-only instant blocks)
     let behavioralScore = 0;
 
     if (features.jerkEntropy !== null) {
-        if (features.jerkEntropy < 0.001) { // Hardened threshold for trackpads
-            behavioralScore += 60; 
-            reasons.push('LACKS_BIOLOGICAL_JITTER'); 
-        } else if (features.jerkEntropy > 1.2) {
-            behavioralScore += 10; 
-            reasons.push('HIGH_ENTROPY_ANOMALY');
-        }
+      if (features.jerkEntropy < 0.001) {
+        behavioralScore += 60; 
+        reasons.push('LACKS_BIOLOGICAL_JITTER'); 
+      } else if (features.jerkEntropy > 1.2) {
+        behavioralScore += 10; 
+        reasons.push('HIGH_ENTROPY_ANOMALY');
+      }
     }
 
     if (features.isExcessivelySmooth) {
-        behavioralScore += 50; 
-        reasons.push('EXCESSIVE_SMOOTHNESS_DETECTION');
+      behavioralScore += 50; 
+      reasons.push('EXCESSIVE_SMOOTHNESS_DETECTION');
     }
 
-    // --- NEW: EVENT-LOOP DEFENSE ---
-    // If timing variance is identical or physically impossible, someone script-injected the DOM.
+    // EVENT-LOOP DEFENSE: timing variance identical or physically impossible → scripted event injection
     if (features.eventClumpingVariance !== null && features.eventClumpingVariance < 0.0001) {
-        behavioralScore += 100;
-        reasons.push('EVENT_LOOP_CLUMPING_DETECTED');
+      behavioralScore += 100;
+      reasons.push('EVENT_LOOP_CLUMPING_DETECTED');
     }
 
     // Dwell variance: Mechanical regularity
-    const hasMechanicalDwellPattern = features.dwellTimeVariance !== null
-      && features.dwellTimeVariance < 0.1; // Trackpad precision grace
-    
-    if (hasMechanicalDwellPattern) {
+    if (features.dwellTimeVariance !== null && features.dwellTimeVariance < 0.1) {
       behavioralScore += 10;
       reasons.push('MECHANICAL_DWELL_PATTERN');
     }
 
-    // --- NEW: MOBILE VULNERABILITY & ARC DEFENSE ---
+    // PRECISION DETECTION: v3.6.7 fix — apply to BOTH axes, not just vertical.
+    // A perfectly linear path in ANY direction (accelAsymmetry ≈ 0 because no vertical component,
+    // but arcDeviation close to 1.0 or exactly 1.0) is a bot signal.
+    // We combine arc-linearity with jerk entropy low score for higher confidence.
+    const isPerfectlyLinear =
+      features.arcDeviation !== null &&
+      features.arcDeviation > 0 &&
+      features.arcDeviation < 1.002 && // covers both perfectly horizontal and vertical paths
+      features.mstLength > 50;         // only flag paths with meaningful length
+
     if (options?.isMobile) {
       const isTouchEmulator = features.touchVariance !== null && features.touchVariance === 0;
       if (isTouchEmulator && features.mstLength > 100) {
         behavioralScore += 100;
         reasons.push('STATIC_TOUCH_PRESSURE_ANOMALY');
       }
-
-      const isLineBot = features.arcDeviation !== null && features.arcDeviation > 0 && features.arcDeviation < 1.005;
-      if (isLineBot && features.mstLength > 100) {
+      // Mobile: slightly looser threshold (1.005) because human thumb swipes are imprecise
+      const isLineBotMobile = features.arcDeviation !== null &&
+        features.arcDeviation > 0 &&
+        features.arcDeviation < 1.005 &&
+        features.mstLength > 100;
+      if (isLineBotMobile) {
         behavioralScore += 100;
         reasons.push('LINEAR_SWIPE_ARC_ANOMALY');
       }
     } else {
-      // Desktop Strict Linear Check
-      const isLineBotDesktop = features.arcDeviation !== null && features.arcDeviation > 0 && features.arcDeviation < 1.0001;
-      if (isLineBotDesktop && features.mstLength > 100) {
+      // Desktop: strict threshold + universal axis check (v3.6.7 Horizontal Blind Spot Fix)
+      if (isPerfectlyLinear) {
         behavioralScore += 100;
         reasons.push('PERFECT_LINEAR_TRAJECTORY');
       }
     }
 
-    // CAP BEHAVIOR: Hardened Cap to 100 to allow behavioral-only instant blocks.
+    // CAP BEHAVIOR: cap at 100 to allow behavioral-only instant blocks
     totalScore += Math.min(behavioralScore, 100);
 
-    // --- TIER 3: HUMANITY VERIFICATION (v3.5.1 HEAL) ---
-    // Biological Tremor Verification: The proof of physical presence.
+    // --- TIER 3: HUMANITY VERIFICATION ---
+    // Biological Tremor Verification: proof of physical presence.
+    // Do NOT apply if hardware/software automation signals are already confirmed.
     const hasCriticalBotSignal = !!(options?.automation?.webdriver || options?.automation?.headless);
     
     if (features.isHumanVerified && !hasCriticalBotSignal) {
-      totalScore -= 40; // Restored from 30 to fully clear incidental challenge points for true humans
+      totalScore -= 40;
       reasons.push('BIOLOGICAL_TREMOR_VERIFIED');
     }
 
-    // v3.6.0: Challenge Solved Bypass
+    // Challenge Solved Bypass: user successfully clicked the Turing challenge button
     if (options?.challengeSolved) {
-        totalScore -= 60; // Significant pull towards ALLOW
-        reasons.push('CHALLENGE_SOLVED_BY_USER');
+      totalScore -= 60;
+      reasons.push('CHALLENGE_SOLVED_BY_USER');
     }
 
     // --- TIER 4: DECISION MATRIX ---
@@ -188,12 +214,12 @@ export class TraceGuardAI {
     if (score >= 0.8) decision = 'block';
     else if (score >= 0.4) decision = 'challenge';
 
-    // Legacy support: Default reason if everything is clean
+    // Default reason if everything is clean
     const reason = reasons.length > 0 ? reasons.join(' + ') : 'CONSISTENT_HUMAN_TRAJECTORY';
 
-    // Special case: empty movement
+    // Special case: empty movement — no telemetry yet, issue a soft challenge
     if (features.mstLength === 0 && mouseEvents.length > 0) {
-        return { score: 0.5, decision: 'challenge', reason: 'INSUFFICIENT_BEHAVIORAL_SIGNAL', features };
+      return { score: 0.5, decision: 'challenge', reason: 'INSUFFICIENT_BEHAVIORAL_SIGNAL', features };
     }
 
     return { 

@@ -254,175 +254,175 @@ export function setupHook(options?: TraceGuardOptions) {
 
   if (config.enabled && !hookEnabled) {
     originalCreateServer = http.createServer;
-    
+
     const patchServer = (originalFn: any) => {
       return function (this: any, requestListener?: RequestListener | any, ...args: any[]) {
         if (!requestListener) {
           return originalFn.apply(this, arguments as any);
         }
 
-      const wrappedListener: RequestListener = (req: IncomingMessage, res: ServerResponse) => {
-        // Exclude paths
-        if (config.exclude?.some(url => req.url?.startsWith(url))) {
-           return requestListener(req, res);
-        }
+        const wrappedListener: RequestListener = (req: IncomingMessage, res: ServerResponse) => {
+          // Exclude paths
+          if (config.exclude?.some(url => req.url?.startsWith(url))) {
+            return requestListener(req, res);
+          }
 
-        // Intercept validation endpoint
-        if (req.url === '/_tg/validate' && req.method === 'POST') {
-          let body = '';
-          req.on('data', chunk => { body += chunk.toString(); });
-          req.on('end', () => {
-             try {
-               const data = JSON.parse(body);
+          // Intercept validation endpoint
+          if (req.url === '/_tg/validate' && req.method === 'POST') {
+            let body = '';
+            req.on('data', chunk => { body += chunk.toString(); });
+            req.on('end', () => {
+              try {
+                const data = JSON.parse(body);
                 const result = globalAi.analyzeSession(
-                  data.ja4 || '', 
+                  data.ja4 || '',
                   data.events || [],
-                  { 
+                  {
                     decoyTriggered: !!data.decoyTriggered,
                     challengeSolved: !!data.challengeSolved,
                     trapId: data.trapId,
                     automation: data.automation
                   }
                 );
-               
-               // Default behavior if not explicitly handled: print the detection
-               if (result.decision !== 'allow') {
+
+                // Default behavior if not explicitly handled: print the detection
+                if (result.decision !== 'allow') {
                   console.log(`[TraceGuard] SECURITY ALERT: ${result.decision.toUpperCase()} - ${result.reason}`);
-               }
+                }
 
-               if (config.onDetection && result.decision !== 'allow') {
+                if (config.onDetection && result.decision !== 'allow') {
                   config.onDetection(result);
-               }
+                }
 
-               res.writeHead(200, { 'Content-Type': 'application/json' });
-               res.end(JSON.stringify(result));
-             } catch (e) {
-               res.writeHead(400);
-               res.end('Bad Request');
-             }
-          });
-          return;
-        }
-
-        // Wrap response for script injection
-        const originalWrite = res.write;
-        const originalEnd = res.end;
-        const originalSetHeader = res.setHeader;
-        
-        let isHtml = false;
-        let contentEncoding = '';
-        let htmlChunks: Buffer[] = [];
-
-        res.setHeader = function(name: string, value: string | number | readonly string[]) {
-          const lName = name.toLowerCase();
-          if (lName === 'content-type' && String(value).includes('text/html')) {
-            isHtml = true;
+                res.writeHead(200, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify(result));
+              } catch (e) {
+                res.writeHead(400);
+                res.end('Bad Request');
+              }
+            });
+            return;
           }
-          if (lName === 'content-encoding') {
-            contentEncoding = String(value).toLowerCase();
-          }
-          if (lName === 'content-length' && isHtml) {
-            return this;
-          }
-          return originalSetHeader.apply(this, arguments as any);
-        };
 
-        const originalWriteHead = res.writeHead;
-        res.writeHead = function(statusCode: number, reasonPhrase?: string | any, headers?: any) {
-           let headersObj = headers || reasonPhrase;
-           if (headersObj && typeof headersObj === 'object') {
-             const keys = Object.keys(headersObj);
-             for (const k of keys) {
-               const lk = k.toLowerCase();
-               if (lk === 'content-type' && String(headersObj[k]).includes('text/html')) {
-                 isHtml = true;
-               }
-               if (lk === 'content-encoding') {
-                 contentEncoding = String(headersObj[k]).toLowerCase();
-               }
-             }
-             if (isHtml) {
-               for (const k of keys) {
-                 if (k.toLowerCase() === 'content-length') {
-                   delete headersObj[k];
-                 }
-               }
-             }
-           }
-           return originalWriteHead.apply(this, arguments as any);
-        };
+          // Wrap response for script injection
+          const originalWrite = res.write;
+          const originalEnd = res.end;
+          const originalSetHeader = res.setHeader;
 
-        res.write = function(chunk: any, encoding?: any, cb?: any) {
-          if (isHtml) {
-             if (chunk) {
+          let isHtml = false;
+          let contentEncoding = '';
+          let htmlChunks: Buffer[] = [];
+
+          res.setHeader = function (name: string, value: string | number | readonly string[]) {
+            const lName = name.toLowerCase();
+            if (lName === 'content-type' && String(value).includes('text/html')) {
+              isHtml = true;
+            }
+            if (lName === 'content-encoding') {
+              contentEncoding = String(value).toLowerCase();
+            }
+            if (lName === 'content-length' && isHtml) {
+              return this;
+            }
+            return originalSetHeader.apply(this, arguments as any);
+          };
+
+          const originalWriteHead = res.writeHead;
+          res.writeHead = function (statusCode: number, reasonPhrase?: string | any, headers?: any) {
+            let headersObj = headers || reasonPhrase;
+            if (headersObj && typeof headersObj === 'object') {
+              const keys = Object.keys(headersObj);
+              for (const k of keys) {
+                const lk = k.toLowerCase();
+                if (lk === 'content-type' && String(headersObj[k]).includes('text/html')) {
+                  isHtml = true;
+                }
+                if (lk === 'content-encoding') {
+                  contentEncoding = String(headersObj[k]).toLowerCase();
+                }
+              }
+              if (isHtml) {
+                for (const k of keys) {
+                  if (k.toLowerCase() === 'content-length') {
+                    delete headersObj[k];
+                  }
+                }
+              }
+            }
+            return originalWriteHead.apply(this, arguments as any);
+          };
+
+          res.write = function (chunk: any, encoding?: any, cb?: any) {
+            if (isHtml) {
+              if (chunk) {
                 htmlChunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk, (typeof encoding === 'string' ? encoding : 'utf8') as BufferEncoding));
-             }
-             if (typeof encoding === 'function') encoding();
-             else if (typeof cb === 'function') cb();
-             return true;
-          }
-          return originalWrite.apply(this, arguments as any);
+              }
+              if (typeof encoding === 'function') encoding();
+              else if (typeof cb === 'function') cb();
+              return true;
+            }
+            return originalWrite.apply(this, arguments as any);
+          };
+
+          res.end = function (chunk?: any, encoding?: any, cb?: any) {
+            if (isHtml) {
+              if (chunk && typeof chunk !== 'function') {
+                htmlChunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk, (typeof encoding === 'string' ? encoding : 'utf8') as BufferEncoding));
+              }
+
+              if (htmlChunks.length > 0) {
+                let fullBuffer = Buffer.concat(htmlChunks);
+                let decompressed = fullBuffer;
+
+                try {
+                  if (contentEncoding === 'gzip') decompressed = zlib.gunzipSync(fullBuffer);
+                  else if (contentEncoding === 'deflate') decompressed = zlib.inflateSync(fullBuffer);
+                  else if (contentEncoding === 'br') decompressed = zlib.brotliDecompressSync(fullBuffer);
+
+                  let htmlStr = decompressed.toString('utf8');
+                  if (htmlStr.includes('</body>')) {
+                    htmlStr = htmlStr.replace('</body>', SCRIPT_TO_INJECT + '</body>');
+                    decompressed = Buffer.from(htmlStr, 'utf8');
+
+                    if (contentEncoding === 'gzip') fullBuffer = zlib.gzipSync(decompressed);
+                    else if (contentEncoding === 'deflate') fullBuffer = zlib.deflateSync(decompressed);
+                    else if (contentEncoding === 'br') fullBuffer = zlib.brotliCompressSync(decompressed);
+                    else fullBuffer = decompressed;
+                  }
+
+                  // Set final content length carefully, but only if headers aren't locked
+                  if (!res.headersSent) {
+                    originalSetHeader.call(res, 'Content-Length', fullBuffer.length.toString());
+                  }
+                } catch (e) {
+                  console.error('[TraceGuard] Compression Hook Error:', e);
+                  // Fallback to original buffer if decompression fails
+                }
+
+                // If the arguments were shifted (chunk was omitted or was a function)
+                let finalCb = cb;
+                if (typeof chunk === 'function') finalCb = chunk;
+                else if (typeof encoding === 'function') finalCb = encoding;
+
+                return originalEnd.call(res, fullBuffer, 'binary', finalCb);
+              }
+            }
+            return originalEnd.apply(this, arguments as any);
+          };
+
+          return requestListener(req, res);
         };
 
-        res.end = function(chunk?: any, encoding?: any, cb?: any) {
-          if (isHtml) {
-             if (chunk && typeof chunk !== 'function') {
-               htmlChunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk, (typeof encoding === 'string' ? encoding : 'utf8') as BufferEncoding));
-             }
-             
-             if (htmlChunks.length > 0) {
-                 let fullBuffer = Buffer.concat(htmlChunks);
-                 let decompressed = fullBuffer;
-                 
-                 try {
-                     if (contentEncoding === 'gzip') decompressed = zlib.gunzipSync(fullBuffer);
-                     else if (contentEncoding === 'deflate') decompressed = zlib.inflateSync(fullBuffer);
-                     else if (contentEncoding === 'br') decompressed = zlib.brotliDecompressSync(fullBuffer);
-                     
-                     let htmlStr = decompressed.toString('utf8');
-                     if (htmlStr.includes('</body>')) {
-                         htmlStr = htmlStr.replace('</body>', SCRIPT_TO_INJECT + '</body>');
-                         decompressed = Buffer.from(htmlStr, 'utf8');
-                         
-                         if (contentEncoding === 'gzip') fullBuffer = zlib.gzipSync(decompressed);
-                         else if (contentEncoding === 'deflate') fullBuffer = zlib.deflateSync(decompressed);
-                         else if (contentEncoding === 'br') fullBuffer = zlib.brotliCompressSync(decompressed);
-                         else fullBuffer = decompressed;
-                     }
-                     
-                     // Set final content length carefully, but only if headers aren't locked
-                     if (!res.headersSent) {
-                         originalSetHeader.call(res, 'Content-Length', fullBuffer.length.toString());
-                     }
-                 } catch (e) {
-                     console.error('[TraceGuard] Compression Hook Error:', e);
-                     // Fallback to original buffer if decompression fails
-                 }
-                 
-                 // If the arguments were shifted (chunk was omitted or was a function)
-                 let finalCb = cb;
-                 if (typeof chunk === 'function') finalCb = chunk;
-                 else if (typeof encoding === 'function') finalCb = encoding;
-                 
-                 return originalEnd.call(res, fullBuffer, 'binary', finalCb);
-             }
-          }
-          return originalEnd.apply(this, arguments as any);
-        };
-
-        return requestListener(req, res);
+        return (originalFn as any).call(this, wrappedListener, ...args);
       };
-
-      return (originalFn as any).call(this, wrappedListener, ...args);
     };
-  };
 
     (http as any).createServer = patchServer(originalCreateServer);
     hookEnabled = true;
   } else if (!config.enabled && hookEnabled) {
     // Teardown
     if (originalCreateServer) {
-        (http as any).createServer = originalCreateServer;
+      (http as any).createServer = originalCreateServer;
     }
     hookEnabled = false;
   }

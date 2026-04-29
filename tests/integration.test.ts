@@ -268,6 +268,55 @@ describe('TraceGuardAI — Unknown JA4 Robustness', () => {
   });
 });
 
+describe('TraceGuardAI — v3.6.7 Untrusted Event Injection', () => {
+  const guard = new TraceGuardAI();
+  const JA4 = 'ja4_c01_a001_b001';
+
+  it('blocks when ALL events are synthetic (isTrusted=false)', () => {
+    const events = humanEvents().map(e => ({ ...e, tr: false }));
+    const res = guard.analyzeSession(JA4, events);
+    expect(res.decision).toBe('block');
+    expect(res.score).toBe(1.0);
+    expect(res.reason).toContain('ALL_EVENTS_SYNTHETIC_INJECTION');
+  });
+
+  it('blocks when some events are untrusted (mixed session)', () => {
+    const evts = humanEvents().map((e, i) => ({ ...e, tr: i % 5 !== 0 ? true : false }));
+    const res = guard.analyzeSession(JA4, evts);
+    expect(res.decision).toBe('block');
+    expect(res.reason).toContain('UNTRUSTED_DOM_EVENTS');
+  });
+
+  it('allows events when isTrusted is not set (undefined — older browsers)', () => {
+    // Events with tr=undefined should not trigger untrusted penalty
+    const evts = humanEvents().map(e => ({ x: e.x, y: e.y, t: e.t }));
+    const res = guard.analyzeSession(JA4, evts);
+    expect(res.decision).toBe('allow');
+  });
+});
+
+describe('TraceGuardAI — v3.6.7 Horizontal Blind Spot Fix', () => {
+  const guard = new TraceGuardAI();
+  const JA4 = 'ja4_c01_a001_b001';
+
+  it('blocks perfectly horizontal linear bot movement via PERFECT_LINEAR_TRAJECTORY', () => {
+    // 50 events moving strictly along x-axis — previously bypassed via vertical-only check
+    const events: Array<{ x: number; y: number; t: number }> = [];
+    for (let i = 0; i < 50; i++) {
+      events.push({ x: i * 10, y: 200, t: i * 16 }); // y is constant
+    }
+    const res = guard.analyzeSession(JA4, events);
+    expect(res.decision).toBe('block');
+    expect(res.score).toBe(1.0);
+    expect(res.reason).toContain('PERFECT_LINEAR_TRAJECTORY');
+  });
+
+  it('allows diagonal noisy human movement (arc deviation > 1.002)', () => {
+    const res = guard.analyzeSession(JA4, humanEvents(60));
+    expect(res.decision).toBe('allow');
+  });
+});
+
 // ---------------------------------------------------------------------------
 // BehavioralAnalyzer Unit Tests
 // ---------------------------------------------------------------------------
