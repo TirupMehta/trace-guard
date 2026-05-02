@@ -3,12 +3,11 @@
 ![npm version](https://img.shields.io/npm/v/trace-guard)
 ![license](https://img.shields.io/npm/l/trace-guard?color=blue)
 ![supply chain](https://img.shields.io/badge/supply%20chain-100%25-brightgreen)
-![snyk health](https://img.shields.io/badge/snyk%20health-verified-brightgreen)
 ![maintenance](https://img.shields.io/badge/maintenance-sustainable-orange)
 ![build](https://img.shields.io/badge/build-passing-brightgreen)
 
 > [!IMPORTANT]
-> **STABLE BASELINE (v3.6.7)**: Supply Chain Security score is 100/100 on Socket.dev. Horizontal linear bot movement (previously a blind spot) is now caught via universal arc-deviation analysis. All-synthetic event session injection now emits a distinct `ALL_EVENTS_SYNTHETIC_INJECTION` signal. Fast-path optimization skips behavioral analysis for already-confirmed bots.
+> **STABLE BASELINE (v3.6.8)**: Supply Chain Security score is 100/100 on Socket.dev. Horizontal linear bot movement (previously a blind spot) is now caught via universal arc-deviation analysis. All-synthetic event session injection now emits a distinct `ALL_EVENTS_SYNTHETIC_INJECTION` signal. Fast-path optimization skips behavioral analysis for already-confirmed bots.
 
 Add one line to your server. That's it. Trace Guard silently intercepts every HTTP/HTTPS request, injects a behavioral telemetry script, and blocks bots — including sophisticated agentic browsers driven by Vision-Language Models (VLMs, Playwright, Puppeteer, Claude Computer Use).
 
