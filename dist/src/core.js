@@ -71,6 +71,10 @@ class TraceGuardAI {
     analyzeSession(ja4, mouseEvents, options) {
         let totalScore = 0;
         let reasons = [];
+        // CPU Exhaustion Defense: Limit events to prevent CPU spikes from massive payloads
+        if (mouseEvents && mouseEvents.length > 500) {
+            mouseEvents = mouseEvents.slice(0, 500);
+        }
         // --- TIER 0: CRITICAL SIGNALS (100 PTS) ---
         if (!options?.sessionId || !options?.signature) {
             return { score: 1.0, decision: 'block', reason: 'MISSING_TELEMETRY_SIGNATURE', features: {} };

@@ -277,8 +277,20 @@ function setupHook(options) {
                     // Intercept validation endpoint
                     if (req.url === '/_tg/validate' && req.method === 'POST') {
                         let body = '';
-                        req.on('data', chunk => { body += chunk.toString(); });
+                        let bodySize = 0;
+                        req.on('data', chunk => {
+                            bodySize += chunk.length;
+                            // 1MB payload limit to prevent Out-Of-Memory (OOM) DoS attacks
+                            if (bodySize > 1048576) {
+                                req.destroy();
+                            }
+                            else {
+                                body += chunk.toString();
+                            }
+                        });
                         req.on('end', () => {
+                            if (bodySize > 1048576)
+                                return; // Request already destroyed
                             try {
                                 const data = JSON.parse(body);
                                 const result = globalAi.analyzeSession(data.ja4 || '', data.events || [], {
