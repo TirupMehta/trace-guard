@@ -1,17 +1,69 @@
 import { BehavioralAnalyzer, MouseEvent } from './behavioral';
 import { ProtocolAnalyzer } from './protocol';
 
+// Pure-JS SHA-256 for 100% Edge/Serverless compatibility (Zero Dependencies)
+function sha256Sync(message: string): string {
+    const m = unescape(encodeURIComponent(message));
+    const hash = [1779033703, 3144134277, 1013904242, 2773480762, 1359893119, 2600822924, 528734635, 1541459225];
+    const k = [1116352408, 1899447441, 3049323471, 3921009573, 961987163, 1508970993, 2453635748, 2870763221, 3624381080, 310598401, 607225278, 1426881987, 1925078365, 2162078206, 2614888103, 3248222580, 3835390401, 4022224774, 264347078, 604807628, 770255983, 1249150122, 1555081692, 1996064986, 2554220882, 2821834349, 2952996808, 3210313671, 3336571891, 3584528711, 113926993, 338241895, 666307205, 773529912, 1294757372, 1396182291, 1695183700, 1986661051, 2177026350, 2456956037, 2730485921, 2820302411, 3259730800, 3345764771, 3516065817, 3600352804, 4094571909, 275423344, 430227734, 506948616, 659060556, 883997877, 958139571, 1322822218, 1537002063, 1747873779, 1955562222, 2024104815, 2227730452, 2361852424, 2428436474, 2756734187, 3204031479, 3329325298];
+    const w = new Int32Array(64);
+    let l = m.length;
+    const bytes = new Uint8Array(l + 64 - (l % 64 || 64) + 64);
+    for (let i = 0; i < l; i++) bytes[i] = m.charCodeAt(i);
+    bytes[l++] = 0x80;
+    const view = new DataView(bytes.buffer);
+    view.setUint32(bytes.length - 4, (m.length * 8) >>> 0);
+    for (let i = 0; i < bytes.length; i += 64) {
+        for (let j = 0; j < 16; j++) w[j] = view.getInt32(i + j * 4);
+        for (let j = 16; j < 64; j++) {
+            const w15 = w[j - 15], w2 = w[j - 2];
+            const s0 = (w15 >>> 7 | w15 << 25) ^ (w15 >>> 18 | w15 << 14) ^ (w15 >>> 3);
+            const s1 = (w2 >>> 17 | w2 << 15) ^ (w2 >>> 19 | w2 << 13) ^ (w2 >>> 10);
+            w[j] = (w[j - 16] + s0 + w[j - 7] + s1) | 0;
+        }
+        let [a, b, c, d, e, f, g, h] = hash;
+        for (let j = 0; j < 64; j++) {
+            const S1 = (e >>> 6 | e << 26) ^ (e >>> 11 | e << 21) ^ (e >>> 25 | e << 7);
+            const ch = (e & f) ^ (~e & g);
+            const temp1 = (h + S1 + ch + k[j] + w[j]) | 0;
+            const S0 = (a >>> 2 | a << 30) ^ (a >>> 13 | a << 19) ^ (a >>> 22 | a << 10);
+            const maj = (a & b) ^ (a & c) ^ (b & c);
+            const temp2 = (S0 + maj) | 0;
+            h = g; g = f; f = e; e = (d + temp1) | 0; d = c; c = b; b = a; a = (temp1 + temp2) | 0;
+        }
+        hash[0] = (hash[0] + a) | 0; hash[1] = (hash[1] + b) | 0;
+        hash[2] = (hash[2] + c) | 0; hash[3] = (hash[3] + d) | 0;
+        hash[4] = (hash[4] + e) | 0; hash[5] = (hash[5] + f) | 0;
+        hash[6] = (hash[6] + g) | 0; hash[7] = (hash[7] + h) | 0;
+    }
+    return Array.from(hash).map(x => ('00000000' + (x >>> 0).toString(16)).slice(-8)).join('');
+}
+
 export class TraceGuardAI {
   private behavioral = new BehavioralAnalyzer();
   private protocol = new ProtocolAnalyzer();
   private pathCache = new Set<string>(); // Simple replay detection cache
+  private serverSecret = Math.random().toString(36) + Date.now().toString(36);
+
+  public generateSessionToken(): { sessionId: string; signature: string } {
+    // Embed timestamp for 5-minute expiration
+    const timestamp = Date.now();
+    const nonce = Math.random().toString(36).substring(2);
+    const sessionId = `${timestamp}-${nonce}`;
+    // HMAC proxy: Hash(secret + Hash(secret + message))
+    const inner = sha256Sync(this.serverSecret + sessionId);
+    const signature = sha256Sync(this.serverSecret + inner);
+    return { sessionId, signature };
+  }
 
   public analyzeSession(
     ja4: string, 
     mouseEvents: MouseEvent[],
     options?: { 
-      decoyTriggered?: boolean,
-      trapId?: string,
+      sessionId?: string;
+      signature?: string;
+      decoyTriggered?: boolean;
+      trapId?: string;
       automation?: {
         webdriver?: boolean,
         chrome?: boolean,
@@ -33,8 +85,34 @@ export class TraceGuardAI {
   } {
     let totalScore = 0;
     let reasons: string[] = [];
+    
+    // CPU Exhaustion Defense: Limit events to prevent CPU spikes from massive payloads
+    if (mouseEvents && mouseEvents.length > 500) {
+      mouseEvents = mouseEvents.slice(0, 500);
+    }
 
     // --- TIER 0: CRITICAL SIGNALS (100 PTS) ---
+
+    if (!options?.sessionId || !options?.signature) {
+      return { score: 1.0, decision: 'block', reason: 'MISSING_TELEMETRY_SIGNATURE', features: {} };
+    } else {
+      const inner = sha256Sync(this.serverSecret + options.sessionId);
+      const expectedSignature = sha256Sync(this.serverSecret + inner);
+      if (expectedSignature !== options.signature) {
+        return { score: 1.0, decision: 'block', reason: 'INVALID_TELEMETRY_SIGNATURE', features: {} };
+      }
+      
+      // Enforce 5-minute expiration rule
+      const parts = options.sessionId.split('-');
+      if (parts.length === 2) {
+        const timestamp = parseInt(parts[0], 10);
+        if (isNaN(timestamp) || Date.now() - timestamp > 5 * 60 * 1000) {
+          return { score: 1.0, decision: 'block', reason: 'EXPIRED_TELEMETRY_SIGNATURE', features: {} };
+        }
+      } else {
+        return { score: 1.0, decision: 'block', reason: 'MALFORMED_TELEMETRY_SESSION', features: {} };
+      }
+    }
 
     if (options?.decoyTriggered) {
       return { score: 1.0, decision: 'block', reason: 'HONEY_PROMPT_TRIGGERED', features: {} };

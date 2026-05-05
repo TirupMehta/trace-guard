@@ -1,7 +1,17 @@
 import type { RequestListener, IncomingMessage, ServerResponse } from 'http';
-const http = require('http');
-const zlib = require('zlib');
 import { TraceGuardAI } from './core';
+
+let http: any;
+let zlib: any;
+try {
+  // Edge-safe dynamic require to prevent Vercel/Cloudflare build crashes
+  const req = typeof require !== 'undefined' ? require : null;
+  if (req) {
+      http = req('http');
+      zlib = req('zlib');
+  }
+} catch(e) {}
+
 
 let originalCreateServer: any = null;
 let hookEnabled = false;
@@ -24,11 +34,15 @@ let config: TraceGuardOptions = {
 // Internal shared instance for the hook
 const globalAi = new TraceGuardAI();
 
-const SCRIPT_TO_INJECT = `
+export const getScriptToInject = (sessionId: string, signature: string) => `
 <script>
 (function(){
   if (window._tgInjected) return;
   window._tgInjected = true;
+
+  const tgSessionId = "${sessionId}";
+  const tgSignature = "${signature}";
+
 
   const processResult = (data) => {
       if (data.decision === 'block') {
@@ -76,6 +90,8 @@ const SCRIPT_TO_INJECT = `
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({ 
+                  sessionId: tgSessionId,
+                  signature: tgSignature,
                   challengeSolved: true,
                   automation: getAutomationSignals()
               })
@@ -164,6 +180,8 @@ const SCRIPT_TO_INJECT = `
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
+          sessionId: tgSessionId,
+          signature: tgSignature,
           decoyTriggered: true,
           trapId: dynamicId,
           automation: getAutomationSignals()
@@ -190,15 +208,17 @@ const SCRIPT_TO_INJECT = `
   // --- KINEMATIC TRACKING ---
   const events = [];
   let isMobile = false;
-  let hasDispatched = false;
+  let dispatchCount = 0;
 
   const dispatchValidation = () => {
-    if (hasDispatched) return;
-    hasDispatched = true;
+    if (dispatchCount >= 2) return;
+    dispatchCount++;
     fetch('/_tg/validate', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
+        sessionId: tgSessionId,
+        signature: tgSignature,
         ja4: "ja4_c01_a001_b001", // Simulating a real browser JA4
         events: events,
         automation: getAutomationSignals(),
@@ -214,7 +234,8 @@ const SCRIPT_TO_INJECT = `
     if (isMobile) return; // Prevent double-firing on some touch-hybrid mobile frameworks
     if (events.length < 50) {
       events.push({ x: e.clientX, y: e.clientY, t: Date.now(), p: performance.now(), tr: e.isTrusted });
-      if (events.length === 50) dispatchValidation();
+      // Pre-flight kinematics at 15 events, full validation at 50
+      if (events.length === 15 || events.length === 50) dispatchValidation();
     }
   }, {passive: true});
 
@@ -252,7 +273,7 @@ export function setupHook(options?: TraceGuardOptions) {
     config = { ...config, ...options };
   }
 
-  if (config.enabled && !hookEnabled) {
+  if (config.enabled && !hookEnabled && http) {
     originalCreateServer = http.createServer;
 
     const patchServer = (originalFn: any) => {
@@ -270,24 +291,39 @@ export function setupHook(options?: TraceGuardOptions) {
           // Intercept validation endpoint
           if (req.url === '/_tg/validate' && req.method === 'POST') {
             let body = '';
-            req.on('data', chunk => { body += chunk.toString(); });
+            let bodySize = 0;
+            req.on('data', chunk => { 
+              bodySize += chunk.length;
+              // 1MB payload limit to prevent Out-Of-Memory (OOM) DoS attacks
+              if (bodySize > 1048576) {
+                req.destroy();
+              } else {
+                body += chunk.toString(); 
+              }
+            });
             req.on('end', () => {
+              if (bodySize > 1048576) return; // Request already destroyed
               try {
                 const data = JSON.parse(body);
                 const result = globalAi.analyzeSession(
                   data.ja4 || '',
                   data.events || [],
                   {
+                    sessionId: data.sessionId,
+                    signature: data.signature,
                     decoyTriggered: !!data.decoyTriggered,
                     challengeSolved: !!data.challengeSolved,
                     trapId: data.trapId,
-                    automation: data.automation
+                    automation: data.automation,
+                    isMobile: !!data.isMobile
                   }
                 );
 
                 // Default behavior if not explicitly handled: print the detection
                 if (result.decision !== 'allow') {
-                  console.log(`[TraceGuard] SECURITY ALERT: ${result.decision.toUpperCase()} - ${result.reason}`);
+                  console.log(`\n\x1b[41m\x1b[37m 🛡️ TRACE GUARD BLOCKED \x1b[0m`);
+                  console.log(`\x1b[31mReason:\x1b[0m ${result.reason}`);
+                  console.log(`\x1b[33mScore:\x1b[0m ${result.score.toFixed(2)} / 1.00\n`);
                 }
 
                 if (config.onDetection && result.decision !== 'allow') {
@@ -381,7 +417,8 @@ export function setupHook(options?: TraceGuardOptions) {
 
                   let htmlStr = decompressed.toString('utf8');
                   if (htmlStr.includes('</body>')) {
-                    htmlStr = htmlStr.replace('</body>', SCRIPT_TO_INJECT + '</body>');
+                    const token = globalAi.generateSessionToken();
+                    htmlStr = htmlStr.replace('</body>', getScriptToInject(token.sessionId, token.signature) + '</body>');
                     decompressed = Buffer.from(htmlStr, 'utf8');
 
                     if (contentEncoding === 'gzip') fullBuffer = zlib.gzipSync(decompressed);

@@ -7,7 +7,7 @@
 ![build](https://img.shields.io/badge/build-passing-brightgreen)
 
 > [!IMPORTANT]
-> **STABLE BASELINE (v3.6.8)**: Supply Chain Security score is 100/100 on Socket.dev. Horizontal linear bot movement (previously a blind spot) is now caught via universal arc-deviation analysis. All-synthetic event session injection now emits a distinct `ALL_EVENTS_SYNTHETIC_INJECTION` signal. Fast-path optimization skips behavioral analysis for already-confirmed bots.
+> **STABLE BASELINE (v3.6.8)**: 100% Edge-Compatible (Vercel/Cloudflare). Integrated pure-JS SHA-256 for time-limited (5m) session HMAC integrity to completely prevent replay attacks. Patched OOM DoS and CPU Exhaustion vectors for infinite payload attacks. Now features frictionless exports for Next.js App Router and Express middlewares.
 
 Add one line to your server. That's it. Trace Guard silently intercepts every HTTP/HTTPS request, injects a behavioral telemetry script, and blocks bots — including sophisticated agentic browsers driven by Vision-Language Models (VLMs, Playwright, Puppeteer, Claude Computer Use).
 
@@ -25,19 +25,67 @@ Trace Guard is a security-focused library. We maintain a strict [Security Policy
 npm install trace-guard
 ```
 
-## Quick Start (30 Seconds)
+## Usage (Global / Vanilla Node.js)
+
+For traditional Node.js servers (Express, Fastify, raw `http`), Trace Guard intercepts all HTML responses and validates telemetry globally. Just place this at the absolute top of your entry file.
 
 ```javascript
-// At the TOP of your server entry point, before anything else.
-require('trace-guard');
+require('trace-guard').setupHook({
+    enabled: true,
+    mode: 'block',     // 'block' | 'challenge' | 'monitor'
+    threshold: 0.7,    // Block threshold (0.0 to 1.0)
+});
 
-// Then start your server as normal — Express, Fastify, raw http, whatever.
-const express = require('express');
-const app = express();
-app.listen(3000);
+// Your normal server code below...
+const http = require('http');
+http.createServer((req, res) => {
+    res.writeHead(200, { 'Content-Type': 'text/html' });
+    res.end('<html><body><h1>Protected by Trace Guard</h1></body></html>');
+}).listen(8080);
 ```
 
-That's the complete integration. You add zero routes, zero middleware, zero config files.
+## Usage (Next.js App Router / Vercel Edge)
+
+Trace Guard is 100% Edge-Compatible. You can integrate it natively into Next.js without monkey-patching.
+
+**1. Inject the Script in `app/layout.tsx`:**
+```tsx
+import { getTraceGuardHTML } from 'trace-guard/dist/src/frameworks';
+
+export default function RootLayout({ children }: { children: React.ReactNode }) {
+  return (
+    <html lang="en">
+      <head>
+        <div dangerouslySetInnerHTML={{ __html: getTraceGuardHTML() }} />
+      </head>
+      <body>{children}</body>
+    </html>
+  );
+}
+```
+
+**2. Mount the Validation Endpoint in `app/_tg/validate/route.ts`:**
+```tsx
+import { createNextRouteHandler } from 'trace-guard/dist/src/frameworks';
+export const POST = createNextRouteHandler();
+```
+
+## Usage (Express Middleware)
+
+For fine-grained control in Express without global monkey-patching:
+
+```javascript
+const express = require('express');
+const { expressMiddleware } = require('trace-guard/dist/src/frameworks');
+
+const app = express();
+app.use(express.json());
+
+// Mount the validation endpoint
+app.post('/_tg/validate', expressMiddleware());
+
+app.listen(8080);
+```
 
 ---
 

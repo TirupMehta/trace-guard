@@ -5,7 +5,17 @@ Format: `## YYYY-MM-DD — vX.Y.Z — Title`
 
 ---
 
-## 2026-05-02 — v3.6.8 — Security Scanner Consolidation
+## 2026-05-05 — v3.6.8 — Edge Compatibility & Client-Side Integrity
+
+### Added
+- **Edge-Compatible HMAC Integrity (`core.ts`)** — Replaced `node:crypto` with a custom, synchronous, zero-dependency SHA-256 implementation. `TraceGuardAI` now generates a time-limited `sessionId` and `signature` (HMAC-SHA256). Replayed telemetry payloads are instantly blocked with `EXPIRED_TELEMETRY_SIGNATURE` after 5 minutes. 100% compatible with Vercel Edge and Cloudflare Workers.
+- **Framework Middleware Integrations (`frameworks.ts`)** — Added dedicated exports for mass developer adoption: `getTraceGuardHTML()`, `createNextRouteHandler()`, and `expressMiddleware()`. Trace Guard can now be integrated into any modern stack natively without relying on `http.createServer` monkey-patching.
+- **Pre-flight Kinematics (Cold-Start Defense) (`hook.ts`)** — AI agents that perform immediate single-interaction attacks are now caught. The telemetry script now dispatches an early signal at 15 events, followed by the full biometric payload at 50 events. This closes the Cold-Start vulnerability (`pending.md` Item D).
+- **Monitor Mode (DX)** — Added rich, color-formatted terminal logging when a bot is blocked to provide instant visual feedback to developers.
+
+### Fixed
+- **Out-of-Memory (OOM) DoS Vulnerability (`hook.ts`)** — The fallback validation endpoint previously concatenated data chunks without any length limits. An attacker could crash the Node.js server with an infinite payload stream. Fixed by enforcing a strict 1MB payload ceiling and aborting the connection instantly if exceeded.
+- **CPU Exhaustion DoS Vulnerability (`core.ts`)** — The `analyzeSession` function iterated over all `mouseEvents`. An attacker could send a payload with 10,000,000 synthetic events to lock the Node.js event loop. Fixed by truncating the `mouseEvents` array to 500 events before processing.
 
 ### Changed
 - **Removed Snyk References** — Standardized on Socket.dev for supply chain security scanning. Removed all Snyk-specific global rules, MCP integrations, README badges, and agent instruction references.

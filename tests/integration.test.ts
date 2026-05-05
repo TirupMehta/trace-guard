@@ -1,6 +1,11 @@
 import { TraceGuardAI } from '../src/core';
 import { BehavioralAnalyzer } from '../src/behavioral';
 
+function withToken(guard: TraceGuardAI, options: any = {}) {
+  const token = guard.generateSessionToken();
+  return { ...options, ...token };
+}
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -107,14 +112,14 @@ describe('TraceGuardAI — Protocol Layer', () => {
   const guard = new TraceGuardAI();
 
   it('blocks known script fingerprints (python-requests / curl)', () => {
-    const res = guard.analyzeSession('ja4_c01_0001_0001', []);
+    const res = guard.analyzeSession('ja4_c01_0001_0001', [], withToken(guard));
     expect(res.decision).toBe('block');
     expect(res.reason).toContain('JA4_PROTOCOL_MATCH_SCRIPT');
   });
 
   it('blocks instantly if VLM Honey-Prompt decoy is triggered (regardless of behavior)', () => {
     const humanLike = humanEvents();
-    const res = guard.analyzeSession('ja4_c01_a001_b001', humanLike, { decoyTriggered: true });
+    const res = guard.analyzeSession('ja4_c01_a001_b001', humanLike, withToken(guard, { decoyTriggered: true }));
     expect(res.decision).toBe('block');
     expect(res.reason).toBe('HONEY_PROMPT_TRIGGERED');
     expect(res.score).toBe(1.0);
@@ -130,26 +135,26 @@ describe('TraceGuardAI — Automation Signals (Stealth-Busting)', () => {
   });
 
   it('blocks if navigator.webdriver is true (Score 80)', () => {
-    const res = guard.analyzeSession(BROWSER_JA4, humanEvents(), { 
+    const res = guard.analyzeSession(BROWSER_JA4, humanEvents(), withToken(guard, { 
       automation: { webdriver: true } 
-    });
+    }));
     expect(res.decision).toBe('block');
     expect(res.reason).toContain('AUTOMATION_WEBDRIVER_DETECTION');
     expect(res.score).toBeGreaterThanOrEqual(0.8);
   });
 
   it('challenges on headless anomaly (Score 50)', () => {
-    const res = guard.analyzeSession(BROWSER_JA4, humanEvents(), { 
+    const res = guard.analyzeSession(BROWSER_JA4, humanEvents(), withToken(guard, { 
       automation: { headless: true } 
-    });
+    }));
     expect(res.decision).toBe('challenge');
     expect(res.reason).toContain('HEADLESS_BROWSER_ANOMALY');
   });
 
   it('blocks on combined automation signals (webdriver + headless = 100+)', () => {
-    const res = guard.analyzeSession(BROWSER_JA4, humanEvents(), { 
+    const res = guard.analyzeSession(BROWSER_JA4, humanEvents(), withToken(guard, { 
       automation: { webdriver: true, headless: true } 
-    });
+    }));
     expect(res.decision).toBe('block');
     expect(res.score).toBe(1.0);
   });
@@ -165,7 +170,7 @@ describe('TraceGuardAI — Agentic Defense (v3.3.0)', () => {
 
   it('detects AI Agent "Think-Act" step cadence (Score 60+)', () => {
     const events = agentCadenceEvents(4);
-    const res = guard.analyzeSession(BROWSER_JA4, events);
+    const res = guard.analyzeSession(BROWSER_JA4, events, withToken(guard));
     // cadence(60) + block from EVENT Clumping
     expect(res.decision).toBe('block');
     expect(res.score).toBe(1.0); 
@@ -173,17 +178,17 @@ describe('TraceGuardAI — Agentic Defense (v3.3.0)', () => {
 
   it('allows access if challengeSolved is true (Turing Challenge loop)', () => {
     const events = agentCadenceEvents(4); // Suspicious cadence + Event Clumping
-    const res = guard.analyzeSession(BROWSER_JA4, events, { challengeSolved: true });
+    const res = guard.analyzeSession(BROWSER_JA4, events, withToken(guard, { challengeSolved: true }));
     // Event Clumping hits 100 behavior Cap. 100 - 60 (Challenge solved) = 40 (Challenge)
     expect(res.decision).toBe('challenge');
     expect(res.score).toBeCloseTo(0.4, 1);
   });
 
   it('blocks instantly if VLM Cognitive Trap is triggered', () => {
-    const res = guard.analyzeSession(BROWSER_JA4, humanEvents(), { 
+    const res = guard.analyzeSession(BROWSER_JA4, humanEvents(), withToken(guard, { 
       decoyTriggered: true,
       trapId: 'tg-vlm-verify' 
-    });
+    }));
     expect(res.decision).toBe('block');
     expect(res.reason).toBe('HONEY_PROMPT_TRIGGERED');
     expect(res.score).toBe(1.0);
@@ -203,14 +208,14 @@ describe('TraceGuardAI — Behavioral Analysis (Weighted)', () => {
     for (let i = 0; i < 20; i++) {
         events.push({ x: i * 10, y: 50, t: i * 16 });
     }
-    const res = guard.analyzeSession(BROWSER_JA4, events);
+    const res = guard.analyzeSession(BROWSER_JA4, events, withToken(guard));
     // Smoothness (50) + No Jitter (60) + Symmetry (80) = 190 -> capped to 100
     expect(res.decision).toBe('block');
     expect(res.score).toBe(1.0);
   });
 
   it('allows asymmetric vertical human movements', () => {
-    const res = guard.analyzeSession(BROWSER_JA4, humanEvents());
+    const res = guard.analyzeSession(BROWSER_JA4, humanEvents(), withToken(guard));
     expect(res.decision).toBe('allow');
   });
 
@@ -222,16 +227,16 @@ describe('TraceGuardAI — Behavioral Analysis (Weighted)', () => {
         evts.push({ x: 100, y: i * 5, t });
         t += 20;
     }
-    const res = guard.analyzeSession(BROWSER_JA4, evts);
+    const res = guard.analyzeSession(BROWSER_JA4, evts, withToken(guard));
     expect(res.decision).toBe('block'); 
     expect(res.score).toBe(1.0); 
   });
 
   it('blocks symmetric linear bot that also fails automation check', () => {
     const evts = linearEvents(50, 0, 5, 20); // vertical linear
-    const res = guard.analyzeSession(BROWSER_JA4, evts, { 
+    const res = guard.analyzeSession(BROWSER_JA4, evts, withToken(guard, { 
       automation: { languages: false } // +25 pts
-    });
+    }));
     // behavior(100) + languages(25) = 125 -> capped at 1.0 max per scale
     expect(res.decision).toBe('block');
     expect(res.score).toBe(1.0); 
@@ -243,7 +248,7 @@ describe('TraceGuardAI — Teleportation Detection', () => {
 
   it('blocks teleportation events (Score 80 baseline)', () => {
     const events = teleportEvents(25);
-    const res = guard.analyzeSession('ja4_browser', events);
+    const res = guard.analyzeSession('ja4_browser', events, withToken(guard));
     // Teleportation (80) = 80
     expect(res.decision).toBe('block');
     expect(res.score).toBeGreaterThanOrEqual(0.8);
@@ -255,13 +260,13 @@ describe('TraceGuardAI — Unknown JA4 Robustness', () => {
   const UNKNOWN_JA4 = 'ja4_unknown_client';
 
   it('allows a human with unknown JA4', () => {
-    const res = guard.analyzeSession(UNKNOWN_JA4, humanEvents());
+    const res = guard.analyzeSession(UNKNOWN_JA4, humanEvents(), withToken(guard));
     expect(res.decision).toBe('allow');
   });
 
   it('blocks unknown client with symmetric linear movement', () => {
     const events = linearEvents(50, 0, 1, 20); // purely linear vertical, 49px total
-    const res = guard.analyzeSession(UNKNOWN_JA4, events);
+    const res = guard.analyzeSession(UNKNOWN_JA4, events, withToken(guard));
     // behavior no longer capped, symmetry instantly blocks
     expect(res.decision).toBe('block');
     expect(res.score).toBeGreaterThanOrEqual(0.8); 
@@ -274,7 +279,7 @@ describe('TraceGuardAI — v3.6.7 Untrusted Event Injection', () => {
 
   it('blocks when ALL events are synthetic (isTrusted=false)', () => {
     const events = humanEvents().map(e => ({ ...e, tr: false }));
-    const res = guard.analyzeSession(JA4, events);
+    const res = guard.analyzeSession(JA4, events, withToken(guard));
     expect(res.decision).toBe('block');
     expect(res.score).toBe(1.0);
     expect(res.reason).toContain('ALL_EVENTS_SYNTHETIC_INJECTION');
@@ -282,7 +287,7 @@ describe('TraceGuardAI — v3.6.7 Untrusted Event Injection', () => {
 
   it('blocks when some events are untrusted (mixed session)', () => {
     const evts = humanEvents().map((e, i) => ({ ...e, tr: i % 5 !== 0 ? true : false }));
-    const res = guard.analyzeSession(JA4, evts);
+    const res = guard.analyzeSession(JA4, evts, withToken(guard));
     expect(res.decision).toBe('block');
     expect(res.reason).toContain('UNTRUSTED_DOM_EVENTS');
   });
@@ -290,7 +295,7 @@ describe('TraceGuardAI — v3.6.7 Untrusted Event Injection', () => {
   it('allows events when isTrusted is not set (undefined — older browsers)', () => {
     // Events with tr=undefined should not trigger untrusted penalty
     const evts = humanEvents().map(e => ({ x: e.x, y: e.y, t: e.t }));
-    const res = guard.analyzeSession(JA4, evts);
+    const res = guard.analyzeSession(JA4, evts, withToken(guard));
     expect(res.decision).toBe('allow');
   });
 });
@@ -305,14 +310,14 @@ describe('TraceGuardAI — v3.6.7 Horizontal Blind Spot Fix', () => {
     for (let i = 0; i < 50; i++) {
       events.push({ x: i * 10, y: 200, t: i * 16 }); // y is constant
     }
-    const res = guard.analyzeSession(JA4, events);
+    const res = guard.analyzeSession(JA4, events, withToken(guard));
     expect(res.decision).toBe('block');
     expect(res.score).toBe(1.0);
     expect(res.reason).toContain('PERFECT_LINEAR_TRAJECTORY');
   });
 
   it('allows diagonal noisy human movement (arc deviation > 1.002)', () => {
-    const res = guard.analyzeSession(JA4, humanEvents(60));
+    const res = guard.analyzeSession(JA4, humanEvents(60), withToken(guard));
     expect(res.decision).toBe('allow');
   });
 });
