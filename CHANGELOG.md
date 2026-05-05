@@ -5,6 +5,13 @@ Format: `## YYYY-MM-DD — vX.Y.Z — Title`
 
 ---
 
+## 2026-05-05 — v3.6.9 — Hotfix
+
+### Fixed
+- **Supply Chain Security False-Positive (`hook.ts`)** — Reverted dynamic `require` obfuscation. The edge-compatible dynamic require logic (`const req = require`) triggered an AI-based malware scanner heuristic for "obfuscated network access" on Socket.dev. Reverted to standard top-level `require` inside a try-catch to restore the 100/100 Supply Chain score.
+
+---
+
 ## 2026-05-05 — v3.6.8 — Edge Compatibility & Client-Side Integrity
 
 ### Added

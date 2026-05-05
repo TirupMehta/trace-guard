@@ -7,7 +7,7 @@
 ![build](https://img.shields.io/badge/build-passing-brightgreen)
 
 > [!IMPORTANT]
-> **STABLE BASELINE (v3.6.8)**: 100% Edge-Compatible (Vercel/Cloudflare). Integrated pure-JS SHA-256 for time-limited (5m) session HMAC integrity to completely prevent replay attacks. Patched OOM DoS and CPU Exhaustion vectors for infinite payload attacks. Now features frictionless exports for Next.js App Router and Express middlewares.
+> **STABLE BASELINE (v3.6.9)**: 100% Edge-Compatible (Vercel/Cloudflare). Integrated pure-JS SHA-256 for time-limited (5m) session HMAC integrity to completely prevent replay attacks. Patched OOM DoS and CPU Exhaustion vectors for infinite payload attacks. Now features frictionless exports for Next.js App Router and Express middlewares.
 
 Add one line to your server. That's it. Trace Guard silently intercepts every HTTP/HTTPS request, injects a behavioral telemetry script, and blocks bots — including sophisticated agentic browsers driven by Vision-Language Models (VLMs, Playwright, Puppeteer, Claude Computer Use).
 
