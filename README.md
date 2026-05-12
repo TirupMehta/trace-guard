@@ -7,9 +7,26 @@
 ![build](https://img.shields.io/badge/build-passing-brightgreen)
 
 > [!IMPORTANT]
-> **STABLE BASELINE (v3.6.9)**: 100% Edge-Compatible (Vercel/Cloudflare). Integrated pure-JS SHA-256 for time-limited (5m) session HMAC integrity to completely prevent replay attacks. Patched OOM DoS and CPU Exhaustion vectors for infinite payload attacks. Now features frictionless exports for Next.js App Router and Express middlewares.
+> **STABLE BASELINE (v3.7.0)**: Hardware Truth Engines, Side-Channel Verification, and De-weighted Math to prevent false-positives while blocking AI agents permanently. 100% Edge-Compatible (Vercel/Cloudflare). Patched OOM DoS and CPU Exhaustion vectors.
 
 Add one line to your server. That's it. Trace Guard silently intercepts every HTTP/HTTPS request, injects a behavioral telemetry script, and blocks bots — including sophisticated agentic browsers driven by Vision-Language Models (VLMs, Playwright, Puppeteer, Claude Computer Use).
+
+---
+
+## 🔥 The Philosophy: Zero Code Integration & Instant Vision AI Blocking
+
+Trace Guard is built on two core principles:
+
+1. **Zero Developer Effort:** Developers should not need to spend time configuring complicated middleware or altering their frontend codebase. **A single line of code** globally patches `http.createServer`. Trace Guard handles everything else automatically, injecting itself stealthily into the base structure of the HTML.
+2. **Instant Pre-Flight Blocking of Vision AIs:** Modern AI agents (VLMs) do not trigger traditional behavioral math because they do not move mice. They take screenshots, calculate pixel coordinates, and dispatch direct CDP clicks. Trace Guard stops them before they can click even a single button.
+
+### How We Block Vision AIs on Real Websites
+We rely on physical truths that cannot be spoofed. Rather than mathematical models, we use **DOM Honey-Traps & Physical Impossibility**:
+- **The Pre-Flight Teleport Trap:** An invisible, full-screen transparent overlay injected into the document. A human physically *must* move their mouse (or touch the screen), which instantly and silently destroys the Trap. An AI agent calculates the button coordinate and fires a synthetic click without moving the mouse first. The Trap catches the click, blocks the session, and protects the real website entirely.
+- **Ghost Mouse Payload Anomaly:** CDP scripts often dispatch synthetic `mousemove` events but forget to calculate the `movementX/Y` physics deltas.
+- **Native Prototype Integrity:** Detection of `Object.defineProperty` used by stealth plugins to hide `navigator.webdriver`.
+
+This guarantees **zero false positives for humans** (even those using privacy browsers like Tor/Brave) while instantly neutralizing sophisticated headless automation.
 
 ---
 
@@ -218,6 +235,10 @@ Returns `{ score: number, decision: 'allow' | 'challenge' | 'block', reason: str
 | `INCONSISTENT_BROWSER_FEATURES` | 1 | `navigator.languages` or `navigator.plugins` absent — headless environment. |
 | `UNTRUSTED_DOM_EVENTS` | 1 | One or more events have `isTrusted=false` — scripted event injection detected. |
 | `ALL_EVENTS_SYNTHETIC_INJECTION` | 1 | Every event in the session has `isTrusted=false` — full session is fabricated. |
+| `VLM_TELEPORT_DETECTED` | 1 | The client clicked the invisible Pre-Flight Trap without prior human mouse movement (Vision AI detected). |
+| `DOM_SCRAPER_HONEYPOT_TRIGGERED` | 1 | The client clicked or focused a screen-reader-safe invisible DOM honeypot. |
+| `GHOST_MOUSE_PAYLOAD_ANOMALY` | 1 | The client dispatched a `mousemove` with changing coordinates but `movementX=0` (Lazy CDP script). |
+| `NATIVE_PROTOTYPE_POISONING` | 1 | `Event.prototype.isTrusted` or `navigator` getters were modified via `Object.defineProperty` (Stealth Plugin detected). |
 | `TELEPORTATION_DETECTED` | 2 | Physically impossible cursor jumps (>150px in <10ms). Universal block. |
 | `EVENT_LOOP_CLUMPING_DETECTED` | 2 | Events share identical microsecond timestamps — proof of DOM injection. |
 | `AGENT_CADENCE_DETECTED` | 2 | Think-Act step timing pattern consistent with agentic browsers. |

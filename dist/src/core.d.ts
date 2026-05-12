@@ -22,6 +22,16 @@ export declare class TraceGuardAI {
             headless?: boolean;
             softwareRenderer?: boolean;
             nativePatched?: boolean;
+            webglRenderer?: string;
+            deviceMemory?: number | null;
+            hardwareConcurrency?: number | null;
+            userAgent?: string;
+            invisibleScroll?: boolean;
+            timingWobble?: number | null;
+            cdpCoordinateDesync?: boolean;
+            vlmTeleportDetected?: boolean;
+            domScraperTriggered?: boolean;
+            ghostMouseAnomaly?: boolean;
         };
         challengeSolved?: boolean;
         isMobile?: boolean;

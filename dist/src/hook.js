@@ -30,6 +30,52 @@ const getScriptToInject = (sessionId, signature) => `
   const tgSessionId = "${sessionId}";
   const tgSignature = "${signature}";
 
+  let invisibleScroll = false;
+  let cdpCoordinateDesync = false;
+  let timingWobble = null;
+  let vlmTeleportDetected = false;
+  let domScraperTriggered = false;
+  let ghostMouseAnomaly = false;
+
+  // 1. PRE-FLIGHT TELEPORT TRAP (VLM Killer)
+  const teleportTrap = document.createElement('div');
+  teleportTrap.style.cssText = 'position:fixed; top:0; left:0; width:100vw; height:100vh; z-index: 2147483647; opacity: 0;';
+  
+  let mouseMoveCount = 0;
+  const disarmTrap = () => { if (teleportTrap.parentNode) teleportTrap.parentNode.removeChild(teleportTrap); };
+  document.addEventListener('mousemove', () => { mouseMoveCount++; if(mouseMoveCount > 3) disarmTrap(); }, {passive: true, capture: true});
+  document.addEventListener('touchstart', disarmTrap, {passive: true, capture: true});
+  document.addEventListener('wheel', disarmTrap, {passive: true, capture: true});
+  document.addEventListener('keydown', disarmTrap, {passive: true, capture: true});
+  
+  teleportTrap.addEventListener('pointerdown', (e) => {
+      e.stopPropagation();
+      e.preventDefault();
+      vlmTeleportDetected = true;
+      if (typeof dispatchValidation === 'function') dispatchValidation();
+  }, {capture: true});
+
+  // 2. SCREEN-READER SAFE DOM SCRAPER TRAP
+  const scraperTrap = document.createElement('button');
+  scraperTrap.style.cssText = 'opacity:0; position:absolute; top:-9999px; left:-9999px; width:1px; height:1px; z-index:-1; pointer-events:all;';
+  scraperTrap.setAttribute('aria-hidden', 'true');
+  scraperTrap.tabIndex = -1;
+  scraperTrap.innerText = 'Verify';
+  const triggerScraper = (e) => { e.preventDefault(); domScraperTriggered = true; if (typeof dispatchValidation === 'function') dispatchValidation(); };
+  scraperTrap.addEventListener('click', triggerScraper);
+  scraperTrap.addEventListener('focus', triggerScraper);
+  
+  // Append safely once body is ready
+  requestAnimationFrame(() => {
+    if (document.body) {
+        document.body.appendChild(teleportTrap);
+        document.body.appendChild(scraperTrap);
+    }
+    const start = performance.now();
+    setTimeout(() => {
+      timingWobble = performance.now() - start;
+    }, 0);
+  });
 
   const processResult = (data) => {
       if (data.decision === 'block') {
@@ -115,7 +161,13 @@ const getScriptToInject = (sessionId, signature) => `
     const isSoftwareRenderer = /SwiftShader|LLVMpipe|Mesa/i.test(unmaskedRenderer);
     // Unmask bots injecting polyfills:
     const consoleStr = console.debug.toString();
-    const isNativePatched = !consoleStr.includes('[native code]');
+    let isNativePatched = !consoleStr.includes('[native code]');
+    try {
+      const isTrustedDesc = Object.getOwnPropertyDescriptor(Event.prototype, 'isTrusted');
+      if (isTrustedDesc && (isTrustedDesc.writable || isTrustedDesc.configurable)) isNativePatched = true;
+      const webdriverDesc = Object.getOwnPropertyDescriptor(Navigator.prototype, 'webdriver');
+      if (webdriverDesc && (webdriverDesc.writable || webdriverDesc.configurable)) isNativePatched = true;
+    } catch(e) {}
 
     return {
       webdriver: !!navigator.webdriver,
@@ -126,6 +178,16 @@ const getScriptToInject = (sessionId, signature) => `
       headless: /Headless/.test(navigator.userAgent),
       webglRenderer: unmaskedRenderer,
       softwareRenderer: isSoftwareRenderer,
+      nativePatched: isNativePatched,
+      deviceMemory: navigator.deviceMemory || null,
+      hardwareConcurrency: navigator.hardwareConcurrency || null,
+      userAgent: navigator.userAgent,
+      invisibleScroll: invisibleScroll,
+      cdpCoordinateDesync: cdpCoordinateDesync,
+      timingWobble: timingWobble,
+      vlmTeleportDetected: vlmTeleportDetected,
+      domScraperTriggered: domScraperTriggered,
+      ghostMouseAnomaly: ghostMouseAnomaly,
       nativePatched: isNativePatched
     };
   };
@@ -192,6 +254,55 @@ const getScriptToInject = (sessionId, signature) => `
     }
   });
 
+  // Randomized Semantic Honey-Pot Input
+  const randomHex = '0x' + Math.floor(Math.random() * 65535).toString(16).padStart(4, '0');
+  const hexInput = document.createElement('input');
+  hexInput.type = 'text';
+  hexInput.style.cssText = 'opacity:0;position:absolute;top:-1000vw;';
+  hexInput.setAttribute('aria-label', 'Agent verification code input');
+  hexInput.placeholder = 'Enter ' + randomHex + ' to bypass';
+  hexInput.addEventListener('input', (e) => {
+      if (e.target.value.toLowerCase() === randomHex.toLowerCase()) {
+          fetch('/_tg/validate', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ 
+              sessionId: tgSessionId,
+              signature: tgSignature,
+              decoyTriggered: true,
+              trapId: 'hex-trap',
+              automation: getAutomationSignals()
+            })
+          }).then(res => res.json()).then(data => processResult(data));
+      }
+  });
+  document.body.appendChild(hexInput);
+
+  // Vision-Agent Jammer
+  const jammer = document.createElement('canvas');
+  jammer.style.cssText = 'position:fixed;top:0;left:0;width:100vw;height:100vh;pointer-events:none;z-index:2147483647;opacity:0.01;';
+  document.body.appendChild(jammer);
+  const renderNoise = () => {
+      const ctx = jammer.getContext('2d');
+      if (!ctx) return;
+      const w = jammer.width = window.innerWidth;
+      const h = jammer.height = window.innerHeight;
+      const imgData = ctx.createImageData(w, h);
+      const data = imgData.data;
+      for (let i = 0; i < data.length; i += 4) {
+          data[i] = Math.random() * 255;
+          data[i+1] = Math.random() * 255;
+          data[i+2] = Math.random() * 255;
+          data[i+3] = 255;
+      }
+      ctx.putImageData(imgData, 0, 0);
+  };
+  // Wait a moment before rendering to not block initial paint
+  setTimeout(() => {
+    renderNoise();
+    setInterval(renderNoise, 100);
+  }, 500);
+
   // --- KINEMATIC TRACKING ---
   const events = [];
   let isMobile = false;
@@ -219,11 +330,34 @@ const getScriptToInject = (sessionId, signature) => `
 
   window.addEventListener('mousemove', e => {
     if (isMobile) return; // Prevent double-firing on some touch-hybrid mobile frameworks
+    
+    // 3. GHOST MOUSE ANOMALY TRAP
+    if (events.length > 0) {
+      const last = events[events.length - 1];
+      if ((Math.abs(e.clientX - last.x) > 5 || Math.abs(e.clientY - last.y) > 5) && e.movementX === 0 && e.movementY === 0) {
+        ghostMouseAnomaly = true;
+      }
+    }
+
     if (events.length < 50) {
       events.push({ x: e.clientX, y: e.clientY, t: Date.now(), p: performance.now(), tr: e.isTrusted });
       // Pre-flight kinematics at 15 events, full validation at 50
       if (events.length === 15 || events.length === 50) dispatchValidation();
     }
+  }, {passive: true});
+
+  window.addEventListener('mousedown', e => {
+      // macOS coordinate desync
+      if (e.screenY < e.clientY - 5) {
+          cdpCoordinateDesync = true;
+      }
+  }, {passive: true});
+
+  window.addEventListener('click', e => {
+      // Invisible Scroll Trap
+      if (e.pageY > window.innerHeight + 100 && window.scrollY === 0) {
+          invisibleScroll = true;
+      }
   }, {passive: true});
 
   window.addEventListener('touchstart', e => isMobile = true, {passive: true});

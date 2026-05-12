@@ -73,6 +73,16 @@ export class TraceGuardAI {
         headless?: boolean,
         softwareRenderer?: boolean,
         nativePatched?: boolean,
+        webglRenderer?: string,
+        deviceMemory?: number | null,
+        hardwareConcurrency?: number | null,
+        userAgent?: string,
+        invisibleScroll?: boolean,
+        timingWobble?: number | null,
+        cdpCoordinateDesync?: boolean,
+        vlmTeleportDetected?: boolean,
+        domScraperTriggered?: boolean,
+        ghostMouseAnomaly?: boolean,
       };
       challengeSolved?: boolean;
       isMobile?: boolean; // Trace Guard mobile touch-event identifier
@@ -160,9 +170,45 @@ export class TraceGuardAI {
         totalScore += 100; // Unambiguous headless VM hardware flag
         reasons.push('WEBGL_SOFTWARE_RENDERER_DETECTED');
       }
+      if (auto.webglRenderer && /SwiftShader|LLVMpipe|Mesa|Google SwiftShader/i.test(auto.webglRenderer) && auto.userAgent && !/Linux/i.test(auto.userAgent)) {
+        totalScore += 100;
+        reasons.push('HARDWARE_SPOOF_DETECTED');
+      }
+      if (auto.deviceMemory !== undefined && auto.deviceMemory !== null && auto.deviceMemory < 4 && auto.userAgent && /Macintosh/.test(auto.userAgent)) {
+        totalScore += 100;
+        reasons.push('DEVICE_MEMORY_INCONSISTENCY');
+      }
+      if (auto.hardwareConcurrency !== undefined && auto.hardwareConcurrency !== null && auto.hardwareConcurrency <= 2 && auto.userAgent && /Macintosh/.test(auto.userAgent)) {
+        totalScore += 100;
+        reasons.push('HARDWARE_CONCURRENCY_ANOMALY');
+      }
+      if (auto.invisibleScroll) {
+        totalScore += 100;
+        reasons.push('INVISIBLE_SCROLL_DETECTED');
+      }
+      if (auto.timingWobble !== undefined && auto.timingWobble !== null && auto.timingWobble === 0) {
+        totalScore += 100;
+        reasons.push('MICRO_TIMING_ANOMALY');
+      }
+      if (auto.cdpCoordinateDesync) {
+        totalScore += 100;
+        reasons.push('CDP_COORDINATE_DESYNC');
+      }
       if (auto.nativePatched) {
         totalScore += 100; // Scripts overriding console or window functions
         reasons.push('NATIVE_PROTOTYPE_POISONING');
+      }
+      if (auto.vlmTeleportDetected) {
+        totalScore += 100;
+        reasons.push('VLM_TELEPORT_DETECTED');
+      }
+      if (auto.domScraperTriggered) {
+        totalScore += 100;
+        reasons.push('DOM_SCRAPER_HONEYPOT_TRIGGERED');
+      }
+      if (auto.ghostMouseAnomaly) {
+        totalScore += 80;
+        reasons.push('GHOST_MOUSE_PAYLOAD_ANOMALY');
       }
     }
 
@@ -202,21 +248,24 @@ export class TraceGuardAI {
     }
 
     // Behavioral anomalies (capped at 100 to allow behavioral-only instant blocks)
+    // v3.7.0: Skip behavioral math scoring on early pre-flight (noisy) sessions
     let behavioralScore = 0;
 
-    if (features.jerkEntropy !== null) {
-      if (features.jerkEntropy < 0.001) {
-        behavioralScore += 60; 
-        reasons.push('LACKS_BIOLOGICAL_JITTER'); 
-      } else if (features.jerkEntropy > 1.2) {
-        behavioralScore += 10; 
-        reasons.push('HIGH_ENTROPY_ANOMALY');
+    if (mouseEvents.length >= 20) {
+      if (features.jerkEntropy !== null) {
+        if (features.jerkEntropy < 0.001) {
+          behavioralScore += 30; // v3.7.0: De-weighted from 60
+          reasons.push('LACKS_BIOLOGICAL_JITTER'); 
+        } else if (features.jerkEntropy > 1.2) {
+          behavioralScore += 10; 
+          reasons.push('HIGH_ENTROPY_ANOMALY');
+        }
       }
-    }
 
-    if (features.isExcessivelySmooth) {
-      behavioralScore += 50; 
-      reasons.push('EXCESSIVE_SMOOTHNESS_DETECTION');
+      if (features.isExcessivelySmooth) {
+        behavioralScore += 30; // v3.7.0: De-weighted from 50
+        reasons.push('EXCESSIVE_SMOOTHNESS_DETECTION');
+      }
     }
 
     // EVENT-LOOP DEFENSE: timing variance identical or physically impossible → scripted event injection

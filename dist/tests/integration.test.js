@@ -182,10 +182,10 @@ describe('TraceGuardAI — Behavioral Analysis (Weighted)', () => {
     it('blocks purely horizontal constant bot movement', () => {
         const events = [];
         for (let i = 0; i < 20; i++) {
-            events.push({ x: i * 10, y: 50, t: i * 16 });
+            events.push({ x: i * 15, y: 50, t: i * 16 });
         }
         const res = guard.analyzeSession(BROWSER_JA4, events, withToken(guard));
-        // Smoothness (50) + No Jitter (60) + Symmetry (80) = 190 -> capped to 100
+        // Smoothness (30) + No Jitter (30) + Linear (100) = 160 -> capped to 100
         expect(res.decision).toBe('block');
         expect(res.score).toBe(1.0);
     });
@@ -484,5 +484,76 @@ describe('BehavioralAnalyzer — Unit Tests', () => {
             ];
             expect(() => analyzer.extractFeatures(events)).not.toThrow();
         });
+    });
+});
+describe('TraceGuardAI — v3.7.0 Ultimate VLM Traps', () => {
+    let guard;
+    beforeEach(() => {
+        guard = new core_1.TraceGuardAI();
+        guard.pathCache = new Set();
+    });
+    it('blocks instantly when Pre-Flight Teleport Trap is triggered', () => {
+        const token = guard.generateSessionToken();
+        const result = guard.analyzeSession('ja4_clean', [], {
+            sessionId: token.sessionId,
+            signature: token.signature,
+            automation: { vlmTeleportDetected: true }
+        });
+        expect(result.decision).toBe('block');
+        expect(result.reason).toContain('VLM_TELEPORT_DETECTED');
+    });
+    it('blocks instantly when DOM Scraper Honeypot is triggered', () => {
+        const token = guard.generateSessionToken();
+        const result = guard.analyzeSession('ja4_clean', [], {
+            sessionId: token.sessionId,
+            signature: token.signature,
+            automation: { domScraperTriggered: true }
+        });
+        expect(result.decision).toBe('block');
+        expect(result.reason).toContain('DOM_SCRAPER_HONEYPOT_TRIGGERED');
+    });
+    it('blocks instantly when Native Prototype Integrity check fails', () => {
+        const token = guard.generateSessionToken();
+        const result = guard.analyzeSession('ja4_clean', [], {
+            sessionId: token.sessionId,
+            signature: token.signature,
+            automation: { nativePatched: true }
+        });
+        expect(result.decision).toBe('block');
+        expect(result.reason).toContain('NATIVE_PROTOTYPE_POISONING');
+    });
+    it('blocks instantly on Ghost Mouse Payload Anomaly (CDP click mismatch)', () => {
+        const token = guard.generateSessionToken();
+        const result = guard.analyzeSession('ja4_clean', [], {
+            sessionId: token.sessionId,
+            signature: token.signature,
+            automation: { ghostMouseAnomaly: true }
+        });
+        expect(result.decision).toBe('block');
+        expect(result.reason).toContain('GHOST_MOUSE_PAYLOAD_ANOMALY');
+    });
+    it('allows a clean human session', () => {
+        const token = guard.generateSessionToken();
+        const humanEvents = Array.from({ length: 30 }).map((_, i) => ({
+            x: 100 + i * 5 + (Math.random() * 10),
+            y: 100 + Math.pow(i, 1.5) + (Math.random() * 10),
+            t: Date.now() + i * 50 + (Math.random() * 20),
+            p: performance.now() + i * 50 + (Math.random() * 20),
+            tr: true
+        }));
+        const result = guard.analyzeSession('ja4_clean', humanEvents, {
+            sessionId: token.sessionId,
+            signature: token.signature,
+            automation: {
+                vlmTeleportDetected: false,
+                domScraperTriggered: false,
+                ghostMouseAnomaly: false,
+                nativePatched: false,
+                cdpCoordinateDesync: false,
+                invisibleScroll: false,
+                timingWobble: 1.2
+            }
+        });
+        expect(result.decision).toBe('allow');
     });
 });
