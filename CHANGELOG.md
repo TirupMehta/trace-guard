@@ -3,9 +3,41 @@
 All notable changes to this project are documented here.  
 Format: `## YYYY-MM-DD — vX.Y.Z — Title`
 
+## 2026-08-02 — v3.8.0 — Multimodal AI-Agent Honeypot & Deception Suite
+
+### Added
+- **SEO Deception Engine (`seo_honeypot.ts`)**: Auto-generates deceptive `robots.txt` and `sitemap.xml` traps to misdirect search crawlers and AI bots into decoy honey-routes.
+- **Web LLM Extractor Protocol Traps (`llmstxt_honeypot.ts`)**: Intercepts `/llms.txt` and `/llms-full.txt` requests to deliver prompt injection directives directly into LLM ingestion pipelines.
+- **Global HTTP Header Traps (`header_honeypot.ts`)**: Injects safe `X-AI-Compliance`, `Server-Timing`, and `Link` response headers with system directives across Next.js, Express, Fastify, and Hono.
+- **Fake PII JSON Poisoning (`json_poison.ts`)**: Serves deceptive user record JSON payloads with embedded prompts on intercepted decoy endpoints (`/_tg_decoy_*`).
+- **WebSocket Stream Poisoning (`websocket_honeypot.ts`)**: Exports `generateWebSocketPoisonFrame` to poison real-time streaming LLM consumers.
+- **Audio & Multimodal STT Traps (`audio_honeypot.ts`)**: Client-side `SpeechSynthesisUtterance` and 18kHz ultrasound `AudioContext` traps targeting multimodal voice/audio crawlers.
+
 ---
 
-## 2026-05-08 — v3.7.0 — The Silent Sentinel
+## 2026-05-15 — v3.7.1 — The Adversarial Deception
+
+### Added
+
+- **Zero-Config Adversarial Middleware (`index.ts`)** — Complete refactor into a single-line integration that patches `http.createServer`. Natively intercepts `res.write` and `res.end` to inject telemetry into the `<head>`.
+- **Ghost Version Redirection (`index.ts`)** — Blocked bots are silently served a "Ghost Version" (decoy HTML) instead of a 403 error, wasting bot resources without alerting the operator.
+- **Hardware Attestation (`core.ts`)** — Binary checks for physical reality:
+    - **GPU Vendor Fingerprint**: Unmasking `SwiftShader`/`llvmpipe` datacenter signatures.
+    - **Battery & Permissions**: Consistency checks between physical sensors and browser flags.
+- **Adversarial Logic Traps (`core.ts`)**:
+    - **LLM Honeypot**: Invisible "Admin reveal" buttons targeting DOM-reading LLMs.
+    - **Accessibility Tree Poisoning**: Injecting "Indirect Prompt Injection" (IPI) instructions into the A11y tree to derail AI scrapers (e.g., Gemini, GPT).
+    - **Infinite Scroll Poison**: Detecting resource-exhausting programmatic `scrollTo` events on hidden elements.
+- **The Reaction Glitch (`core.ts`)** — A rapid 5ms state mutation trap. Any interaction with the glitched state during the 5ms window results in an instant 100% block (impossible for humans).
+- **Shadow DOM Masking & Visual Scrambling (`core.ts`)** — Automatically wraps sensitive content in **Closed Shadow Roots** and renders text using SVG paths to foil OCR and text-based AI while remaining human-readable.
+
+### Removed
+
+- **Statistical Math Layers (`behavioral.ts`)** — Purged all complex math (variance, entropy, standard deviations) in favor of Hard Logic Traps.
+- **Obsolete Files** — Deleted `behavioral.ts`, `protocol.ts`, `hook.ts`, and `frameworks.ts` for a unified, zero-config architecture.
+
+---
+
 
 ### Added
 

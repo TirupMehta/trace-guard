@@ -1,473 +1,428 @@
 "use strict";
+/**
+ * Trace Guard — Behavioral Analysis Engine
+ *
+ * Physiological trajectory analysis rooted in published research:
+ * - Acceleration Asymmetry: DMTG (arXiv:2410.18233)
+ * - Jerk Entropy: Structure Function DFA approximation
+ * - BeCAPTCHA-Mouse: Neuromotor features (arXiv:2005.00890)
+ * - FP-Agent: Behavioral fingerprinting (arXiv:2605.01247)
+ *
+ * All analysis uses a single-pass extractFeatures() loop for performance.
+ * Zero production dependencies.
+ *
+ * @author Tirup Mehta
+ * @license ISC
+ */
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.BehavioralAnalyzer = void 0;
+// ── BehavioralAnalyzer ──
 class BehavioralAnalyzer {
+    /**
+     * Total Euclidean path length in pixels.
+     * Zero events or single event → 0.
+     */
     calculatePathLength(events) {
-        let length = 0;
-        for (let i = 1; i < events.length; i++) {
-            const dx = events[i].x - events[i - 1].x;
-            const dy = events[i].y - events[i - 1].y;
-            length += Math.sqrt(dx * dx + dy * dy);
-        }
-        return length;
-    }
-    /**
-     * Calculates acceleration asymmetry (Upward vs Downward).
-     * Humans are physically asymmetric in pushing (up) vs pulling (down).
-     * Reference: DMTG paper (arXiv:2410.18233).
-     */
-    calculateAccelAsymmetry(events) {
-        let sumUp = 0;
-        let countUp = 0;
-        let sumDown = 0;
-        let countDown = 0;
-        for (let i = 2; i < events.length; i++) {
-            const dt1 = events[i - 1].t - events[i - 2].t;
-            const dt2 = events[i].t - events[i - 1].t;
-            if (dt1 <= 0 || dt2 <= 0)
-                continue;
-            // Use directional velocity to distinguish push vs pull
-            const dy1 = events[i - 1].y - events[i - 2].y;
-            const dy2 = events[i].y - events[i - 1].y;
-            const vy1 = dy1 / dt1;
-            const vy2 = dy2 / dt2;
-            const a = (vy2 - vy1) / dt2;
-            // Check vertical direction
-            if (vy2 < -0.1) {
-                sumUp += Math.abs(a);
-                countUp++;
-            }
-            else if (vy2 > 0.1) {
-                sumDown += Math.abs(a);
-                countDown++;
-            }
-        }
-        const avgUp = countUp > 0 ? sumUp / countUp : 0;
-        const avgDown = countDown > 0 ? sumDown / countDown : 0;
-        // If completely horizontal, there is no vertical asymmetry.
-        if (avgUp === 0 && avgDown === 0)
-            return 0;
-        if (avgDown === 0)
-            return 100; // High ratio if only up accels
-        return avgUp / avgDown;
-    }
-    /**
-     * Approximates the Power Spectral Density slope of acceleration jitter.
-     * Humans exhibit 'pink noise' (1/f) which has correlated fluctuations.
-     * Bots often use random white noise (1/f^0) jitter which is uncorrelated.
-     * We use a spatial Structure Function S2(tau) to find the scaling slope without a heavy FFT.
-     * Reference: DFA methodology, arXiv:2410.18233.
-     */
-    calculateJerkEntropy(events) {
-        if (events.length < 10)
-            return null;
-        const accels = [];
-        for (let i = 2; i < events.length; i++) {
-            const dt1 = events[i - 1].t - events[i - 2].t;
-            const dt2 = events[i].t - events[i - 1].t;
-            if (dt1 <= 0 || dt2 <= 0)
-                continue;
-            const dx1 = events[i - 1].x - events[i - 2].x;
-            const dy1 = events[i - 1].y - events[i - 2].y;
-            const dx2 = events[i].x - events[i - 1].x;
-            const dy2 = events[i].y - events[i - 1].y;
-            const v1 = Math.sqrt(dx1 * dx1 + dy1 * dy1) / dt1;
-            const v2 = Math.sqrt(dx2 * dx2 + dy2 * dy2) / dt2;
-            accels.push((v2 - v1) / dt2);
-        }
-        if (accels.length < 5)
-            return null;
-        let s2_lag1 = 0;
-        for (let i = 0; i < accels.length - 1; i++) {
-            const diff = accels[i + 1] - accels[i];
-            s2_lag1 += diff * diff;
-        }
-        s2_lag1 /= (accels.length - 1);
-        const lag = Math.min(4, Math.floor(accels.length / 2));
-        if (lag < 2)
-            return null;
-        let s2_lagN = 0;
-        for (let i = 0; i < accels.length - lag; i++) {
-            const diff = accels[i + lag] - accels[i];
-            s2_lagN += diff * diff;
-        }
-        s2_lagN /= (accels.length - lag);
-        if (s2_lag1 === 0 || s2_lagN === 0)
-            return 0;
-        // Slope of log(S2) vs log(tau). 
-        // Bots (white noise) ≈ 0. Humans (correlated pink noise) > 0.
-        return (Math.log(s2_lagN) - Math.log(s2_lag1)) / (Math.log(lag) - Math.log(1));
-    }
-    /**
-     * Calculates the variance of inter-event dwell durations.
-     * A "dwell" is a near-stationary pause (pointer moves <5px within a time window).
-     * Humans naturally pause to read/aim — high variance (50ms to 2s).
-     * Bots using constant-velocity interpolation show near-zero dwell variance.
-     * Returns null if fewer than 2 valid dwell segments are found.
-     */
-    calculateDwellTimeVariance(events) {
-        if (events.length < 4)
-            return null;
-        // Collect inter-event deltas where displacement < 5px (stationary intervals)
-        const dwellDurations = [];
-        for (let i = 1; i < events.length; i++) {
-            const dx = events[i].x - events[i - 1].x;
-            const dy = events[i].y - events[i - 1].y;
-            const dist = Math.sqrt(dx * dx + dy * dy);
-            const dt = events[i].t - events[i - 1].t;
-            if (dt <= 0)
-                continue;
-            // Stationary: very little movement relative to time elapsed
-            if (dist < 5) {
-                dwellDurations.push(dt);
-            }
-        }
-        if (dwellDurations.length < 2)
-            return null;
-        // Calculate variance (streaming — no extra array allocations)
-        let sum = 0;
-        let sumSq = 0;
-        const n = dwellDurations.length;
-        for (let i = 0; i < n; i++) {
-            sum += dwellDurations[i];
-            sumSq += dwellDurations[i] * dwellDurations[i];
-        }
-        const mean = sum / n;
-        const variance = (sumSq / n) - (mean * mean);
-        return variance < 0 ? 0 : variance; // guard against float precision errors
-    }
-    /**
-     * Calculates the teleportation score: fraction of movement events where
-     * the pointer jumps >150px in <10ms — physically impossible for a human hand.
-     * Bots replaying or linearly interpolating events can produce such jumps.
-     * Score of 0.0 = no teleportations. Score of 1.0 = all moves are teleports.
-     */
-    calculateTeleportationScore(events) {
         if (events.length < 2)
             return 0;
-        const TELEPORT_DIST_PX = 150;
-        const TELEPORT_VELOCITY_PX_MS = 15;
-        let teleports = 0;
         let total = 0;
         for (let i = 1; i < events.length; i++) {
             const dx = events[i].x - events[i - 1].x;
             const dy = events[i].y - events[i - 1].y;
-            const dt = events[i].t - events[i - 1].t;
-            if (dt < 0)
-                continue; // malformed — skip
-            const dist = Math.sqrt(dx * dx + dy * dy);
-            total++;
-            if (dist > TELEPORT_DIST_PX && (dt === 0 || (dist / dt) > TELEPORT_VELOCITY_PX_MS)) {
-                teleports++;
-            }
+            total += Math.sqrt(dx * dx + dy * dy);
         }
-        return total > 0 ? teleports / total : 0;
+        return total;
     }
     /**
-     * Evaluates if pressure/force fluctuates, inherently proving biological flesh.
-     * If hardware does not supply unique pressure, it safely returns null.
+     * Acceleration asymmetry: ratio of upward to downward acceleration magnitudes.
+     * Based on DMTG (arXiv:2410.18233): humans push upward against gravity differently
+     * than they pull downward. Bots using constant-velocity interpolation produce ≈ 1.0.
+     *
+     * Returns 0 for pure horizontal movement or insufficient data.
      */
-    calculateTouchVariance(events) {
+    calculateAccelAsymmetry(events) {
         if (events.length < 3)
-            return null;
-        let sumF = 0;
-        let countF = 0;
-        for (let i = 0; i < events.length; i++) {
-            if (events[i].f !== undefined && events[i].f !== 1 && events[i].f !== 0) {
-                sumF += events[i].f;
-                countF++;
-            }
-        }
-        if (countF < 3)
-            return null; // No usable force hardware detected
-        const mean = sumF / countF;
-        let varianceSq = 0;
-        for (let i = 0; i < events.length; i++) {
-            if (events[i].f !== undefined && events[i].f !== 1 && events[i].f !== 0) {
-                const diff = events[i].f - mean;
-                varianceSq += diff * diff;
-            }
-        }
-        return varianceSq / countF;
-    }
-    /**
-     * Calculates "Event-Loop Clumping".
-     * Synthetic Playwright bots inject batches of DOM events synchronously or with
-     * strict timer intervals. Organic mice interrupt the browser's RequestAnimationFrame
-     * with physical USB polling rate friction.
-     * Near-zero variance here proves non-hardware scripting.
-     */
-    calculateEventClumping(events) {
-        if (events.length < 5)
-            return null;
-        // We only evaluate if high-res performance data is available
-        if (events[0].p === undefined)
-            return null;
-        const deltas = [];
-        for (let i = 1; i < events.length; i++) {
-            if (events[i].p !== undefined && events[i - 1].p !== undefined) {
-                const dt = events[i].p - events[i - 1].p;
-                // Discard long pauses so we only analyze active swiping payloads
-                if (dt < 100) {
-                    deltas.push(dt);
-                }
-            }
-        }
-        if (deltas.length < 3)
-            return null;
-        let sum = 0;
-        let sumSq = 0;
-        for (const d of deltas) {
-            sum += d;
-            sumSq += d * d;
-        }
-        const mean = sum / deltas.length;
-        const v = (sumSq / deltas.length) - (mean * mean);
-        return v < 0 ? 0 : v;
-    }
-    /**
-     * Detects "Thumb Arc" Biomechanics.
-     * Humans naturally swipe in a subtle arc because the thumb pivots at a joint constraints.
-     * Perfect straight lines (chord length == path length) are likely robotic macros.
-     */
-    calculateArcDeviation(events, pathLength) {
-        if (events.length < 3)
-            return null;
-        if (pathLength === 0)
             return 0;
-        const first = events[0];
-        const last = events[events.length - 1];
-        const dx = last.x - first.x;
-        const dy = last.y - first.y;
-        const straightLineDistance = Math.sqrt(dx * dx + dy * dy);
-        if (straightLineDistance === 0)
-            return null;
-        // The ratio of the actual MST path taken vs the direct geometric straight line
-        // 1.0 means perfectly linear. Humans typically produce ~1.01 to 1.10.
-        return pathLength / straightLineDistance;
-    }
-    extractFeatures(events) {
-        if (events.length < 3) {
-            return {
-                mstLength: 0,
-                avgVelocity: 0,
-                accelAsymmetry: 0,
-                jerkEntropy: null,
-                dwellTimeVariance: null,
-                teleportationScore: 0,
-                agentStepScore: 0,
-                pathHash: '',
-                isExcessivelySmooth: false,
-                biologicalTremorScore: 0,
-                isHumanVerified: false,
-                touchVariance: null,
-                arcDeviation: null,
-                eventClumpingVariance: null,
-            };
+        let upAccelSum = 0;
+        let downAccelSum = 0;
+        let upCount = 0;
+        let downCount = 0;
+        for (let i = 2; i < events.length; i++) {
+            const dt1 = events[i - 1].t - events[i - 2].t;
+            const dt2 = events[i].t - events[i - 1].t;
+            if (dt1 <= 0 || dt2 <= 0)
+                continue;
+            const vy1 = (events[i - 1].y - events[i - 2].y) / dt1;
+            const vy2 = (events[i].y - events[i - 1].y) / dt2;
+            const accel = (vy2 - vy1) / ((dt1 + dt2) / 2);
+            if (accel < 0) {
+                // Upward acceleration (screen Y decreases upward)
+                upAccelSum += Math.abs(accel);
+                upCount++;
+            }
+            else if (accel > 0) {
+                // Downward acceleration
+                downAccelSum += Math.abs(accel);
+                downCount++;
+            }
         }
-        // -----------------------------------------------------------------------
-        // MERGED HOT LOOP: Single-pass computation of path length, acceleration
-        // asymmetry, dwell-time statistics, teleportation, and agent cadence.
-        // -----------------------------------------------------------------------
-        const TELEPORT_DIST_PX = 150;
-        const TELEPORT_VELOCITY_PX_MS = 15;
-        const DWELL_DIST_PX = 5;
-        const AGENT_THINK_THRESHOLD_MS = 400;
-        let pathLength = 0;
-        let sumUp = 0, countUp = 0, sumDown = 0, countDown = 0;
-        let teleports = 0;
-        let totalMoves = 0;
-        let thinkPauses = 0;
-        let activeBursts = 0;
-        let lastWasPause = false;
-        const dwellDurations = [];
+        if (upCount === 0 || downCount === 0)
+            return 0;
+        const upMean = upAccelSum / upCount;
+        const downMean = downAccelSum / downCount;
+        if (downMean === 0)
+            return 0;
+        return upMean / downMean;
+    }
+    /**
+     * Jerk entropy via Structure Function DFA.
+     * Approximates the Power Spectral Density slope of mouse acceleration.
+     * Constant-velocity bots produce zero-variance acceleration → entropy ≈ 0.
+     * Human biological 1/f noise produces non-zero entropy.
+     *
+     * Uses lag-4 structure function as a lightweight DFA proxy.
+     */
+    calculateJerkEntropy(events) {
+        if (events.length < 6)
+            return 0;
+        // Calculate velocities
         const velocities = [];
+        for (let i = 1; i < events.length; i++) {
+            const dt = events[i].t - events[i - 1].t;
+            if (dt <= 0)
+                continue;
+            const dx = events[i].x - events[i - 1].x;
+            const dy = events[i].y - events[i - 1].y;
+            velocities.push(Math.sqrt(dx * dx + dy * dy) / dt);
+        }
+        if (velocities.length < 5)
+            return 0;
+        // Calculate accelerations (jerk proxy)
+        const accels = [];
+        for (let i = 1; i < velocities.length; i++) {
+            accels.push(velocities[i] - velocities[i - 1]);
+        }
+        if (accels.length < 4)
+            return 0;
+        // Structure Function at lag 4
+        const lag = Math.min(4, Math.floor(accels.length / 2));
+        let sfSum = 0;
+        let sfCount = 0;
+        for (let i = 0; i < accels.length - lag; i++) {
+            const diff = accels[i + lag] - accels[i];
+            sfSum += diff * diff;
+            sfCount++;
+        }
+        if (sfCount === 0)
+            return 0;
+        const sf = sfSum / sfCount;
+        // Structure Function at lag 1
+        let sf1Sum = 0;
+        let sf1Count = 0;
+        for (let i = 0; i < accels.length - 1; i++) {
+            const diff = accels[i + 1] - accels[i];
+            sf1Sum += diff * diff;
+            sf1Count++;
+        }
+        if (sf1Count === 0 || sf1Sum === 0)
+            return 0;
+        const sf1 = sf1Sum / sf1Count;
+        // Slope approximation (log-log)
+        if (sf <= 0 || sf1 <= 0)
+            return 0;
+        return Math.log(sf / sf1) / Math.log(lag);
+    }
+    /**
+     * Variance of near-stationary pause durations (dwell times).
+     * Humans pause to read with high variance (200ms–2000ms).
+     * Bots with constant velocity show near-zero dwell variance.
+     *
+     * A "dwell" is detected when pointer moves < 5px between consecutive events.
+     * Returns null if insufficient dwell events detected.
+     */
+    calculateDwellTimeVariance(events) {
+        if (events.length < 3)
+            return null;
+        const dwells = [];
         for (let i = 1; i < events.length; i++) {
             const dx = events[i].x - events[i - 1].x;
             const dy = events[i].y - events[i - 1].y;
+            const dist = Math.sqrt(dx * dx + dy * dy);
+            if (dist < 5) {
+                dwells.push(events[i].t - events[i - 1].t);
+            }
+        }
+        if (dwells.length < 2)
+            return null;
+        const mean = dwells.reduce((a, b) => a + b, 0) / dwells.length;
+        const variance = dwells.reduce((sum, d) => sum + (d - mean) ** 2, 0) / dwells.length;
+        return variance;
+    }
+    /**
+     * Fraction of physically impossible cursor jumps.
+     * No human hand can move a mouse >150px in <10ms.
+     * Score > 0.15 indicates automation.
+     */
+    calculateTeleportationScore(events) {
+        if (events.length < 2)
+            return 0;
+        let teleportCount = 0;
+        let totalSegments = 0;
+        for (let i = 1; i < events.length; i++) {
+            const dx = events[i].x - events[i - 1].x;
+            const dy = events[i].y - events[i - 1].y;
+            const dist = Math.sqrt(dx * dx + dy * dy);
             const dt = events[i].t - events[i - 1].t;
-            const distSq = dx * dx + dy * dy;
-            const dist = Math.sqrt(distSq);
+            totalSegments++;
+            if (dist > 150 && dt < 10) {
+                teleportCount++;
+            }
+        }
+        return totalSegments === 0 ? 0 : teleportCount / totalSegments;
+    }
+    /**
+     * Event-loop clumping: variance of performance.now() deltas.
+     * DOM-injected synthetic events share identical microsecond timestamps.
+     * Real browser events have variable dispatch timing.
+     * Returns 0 if no performance timestamps available.
+     */
+    calculateEventClumping(events) {
+        const pTimestamps = events.filter(e => e.p !== undefined).map(e => e.p);
+        if (pTimestamps.length < 3)
+            return -1; // Not enough data
+        const deltas = [];
+        for (let i = 1; i < pTimestamps.length; i++) {
+            deltas.push(pTimestamps[i] - pTimestamps[i - 1]);
+        }
+        const mean = deltas.reduce((a, b) => a + b, 0) / deltas.length;
+        const variance = deltas.reduce((sum, d) => sum + (d - mean) ** 2, 0) / deltas.length;
+        return variance;
+    }
+    /**
+     * Touch pressure/force variance from capacitive digitizer.
+     * Real human fingers produce variable force readings.
+     * Touch emulators output constant 0 pressure.
+     * Returns null if no touch data present.
+     */
+    calculateTouchVariance(events) {
+        const forces = events.filter(e => e.f !== undefined).map(e => e.f);
+        if (forces.length < 2)
+            return null;
+        const mean = forces.reduce((a, b) => a + b, 0) / forces.length;
+        const variance = forces.reduce((sum, f) => sum + (f - mean) ** 2, 0) / forces.length;
+        return variance;
+    }
+    /**
+     * Arc deviation: chord-to-arc ratio for path curvature.
+     * Human thumb biomechanics force curved swipe paths.
+     * Bots produce perfectly straight lines (arc deviation ≈ 1.0).
+     *
+     * Chord = direct distance start→end.
+     * Arc = total path length.
+     * Ratio = arc / chord. Perfect line = 1.0.
+     */
+    calculateArcDeviation(events) {
+        if (events.length < 3)
+            return 1.0;
+        const first = events[0];
+        const last = events[events.length - 1];
+        const chordDx = last.x - first.x;
+        const chordDy = last.y - first.y;
+        const chord = Math.sqrt(chordDx * chordDx + chordDy * chordDy);
+        if (chord < 10)
+            return 1.0; // Too short to measure
+        const arc = this.calculatePathLength(events);
+        return arc / chord;
+    }
+    /**
+     * Single-pass feature extraction for maximum performance.
+     * Computes all behavioral signals in one merged loop over the events array,
+     * then calculates derived features from accumulated values.
+     */
+    extractFeatures(events) {
+        const n = events.length;
+        // Accumulators
+        let pathLength = 0;
+        let upAccelSum = 0, downAccelSum = 0, upCount = 0, downCount = 0;
+        let teleportCount = 0, totalSegments = 0;
+        let untrustedCount = 0;
+        let maxVelocity = 0, velocitySum = 0, velocityCount = 0;
+        const dwells = [];
+        const pDeltas = [];
+        const velocities = [];
+        const forces = [];
+        // Path hash via simple DJB2
+        let hash = 5381;
+        for (let i = 0; i < n; i++) {
+            const e = events[i];
+            // Hash
+            hash = ((hash << 5) + hash + (e.x ^ e.y)) >>> 0;
+            // Untrusted
+            if (e.tr === false)
+                untrustedCount++;
+            // Collect forces
+            if (e.f !== undefined)
+                forces.push(e.f);
+            if (i === 0)
+                continue;
+            const prev = events[i - 1];
+            const dx = e.x - prev.x;
+            const dy = e.y - prev.y;
+            const dist = Math.sqrt(dx * dx + dy * dy);
+            const dt = e.t - prev.t;
+            // Path length
             pathLength += dist;
-            // Teleportation & Movement check
-            if (dt >= 0) {
-                totalMoves++;
-                if (dist > TELEPORT_DIST_PX && (dt === 0 || (dist / dt) > TELEPORT_VELOCITY_PX_MS)) {
-                    teleports++;
-                }
-                // Agent Cadence: Look for "Think-Act" transitions
-                if (dt > AGENT_THINK_THRESHOLD_MS) {
-                    thinkPauses++;
-                    lastWasPause = true;
-                }
-                else if (dist > 5 && lastWasPause) {
-                    // Movement burst immediately after a long pause
-                    activeBursts++;
-                    lastWasPause = false;
-                }
-            }
-            // Dwell: near-stationary if dist < 5px
-            if (dt > 0 && dist < DWELL_DIST_PX) {
-                dwellDurations.push(dt);
-            }
-            // Velocity for jerk entropy and acceleration asymmetry
+            // Velocity
             if (dt > 0) {
-                velocities.push(dist / dt);
+                const v = dist / dt;
+                velocities.push(v);
+                velocitySum += v;
+                velocityCount++;
+                if (v > maxVelocity)
+                    maxVelocity = v;
             }
-            else {
-                velocities.push(0);
+            // Teleportation
+            totalSegments++;
+            if (dist > 150 && dt < 10)
+                teleportCount++;
+            // Dwell detection (< 5px movement)
+            if (dist < 5 && dt > 0) {
+                dwells.push(dt);
             }
-            // Acceleration asymmetry (requires 3 points: i >= 2)
+            // Performance.now() deltas
+            if (e.p !== undefined && prev.p !== undefined) {
+                pDeltas.push(e.p - prev.p);
+            }
+            // Acceleration (for asymmetry)
             if (i >= 2) {
-                const dt1 = events[i - 1].t - events[i - 2].t;
-                const dt2 = dt;
+                const prevPrev = events[i - 2];
+                const dt1 = prev.t - prevPrev.t;
+                const dt2 = e.t - prev.t;
                 if (dt1 > 0 && dt2 > 0) {
-                    const vy1 = (events[i - 1].y - events[i - 2].y) / dt1;
-                    const vy2 = dy / dt2;
-                    const a = (vy2 - vy1) / dt2;
-                    if (vy2 < -0.1) {
-                        sumUp += Math.abs(a);
-                        countUp++;
+                    const vy1 = (prev.y - prevPrev.y) / dt1;
+                    const vy2 = (e.y - prev.y) / dt2;
+                    const accel = (vy2 - vy1) / ((dt1 + dt2) / 2);
+                    if (accel < 0) {
+                        upAccelSum += Math.abs(accel);
+                        upCount++;
                     }
-                    else if (vy2 > 0.1) {
-                        sumDown += Math.abs(a);
-                        countDown++;
+                    else if (accel > 0) {
+                        downAccelSum += Math.abs(accel);
+                        downCount++;
                     }
                 }
+            }
+        }
+        // ── Derived calculations ──
+        // Acceleration asymmetry
+        let accelAsymmetry = 0;
+        if (upCount > 0 && downCount > 0) {
+            const upMean = upAccelSum / upCount;
+            const downMean = downAccelSum / downCount;
+            if (downMean > 0)
+                accelAsymmetry = upMean / downMean;
+        }
+        // Jerk entropy from velocities
+        const jerkEntropy = this._jerkEntropyFromVelocities(velocities);
+        // Dwell variance
+        let dwellTimeVariance = null;
+        if (dwells.length >= 2) {
+            const dMean = dwells.reduce((a, b) => a + b, 0) / dwells.length;
+            dwellTimeVariance = dwells.reduce((s, d) => s + (d - dMean) ** 2, 0) / dwells.length;
+        }
+        // Event clumping
+        let eventClumping = -1;
+        if (pDeltas.length >= 2) {
+            const pMean = pDeltas.reduce((a, b) => a + b, 0) / pDeltas.length;
+            eventClumping = pDeltas.reduce((s, d) => s + (d - pMean) ** 2, 0) / pDeltas.length;
+        }
+        // Agent cadence detection (think-act pattern: gaps of 1-3s followed by bursts)
+        let agentCadenceDetected = false;
+        if (n >= 10) {
+            let longGaps = 0;
+            let shortBursts = 0;
+            for (let i = 1; i < n; i++) {
+                const dt = events[i].t - events[i - 1].t;
+                if (dt >= 1000 && dt <= 3500)
+                    longGaps++;
+                else if (dt < 50)
+                    shortBursts++;
+            }
+            // Agent pattern: multiple think pauses + action bursts
+            if (longGaps >= 3 && shortBursts >= 5 && longGaps / (n - 1) > 0.15) {
+                agentCadenceDetected = true;
+            }
+        }
+        // Touch pressure variance
+        let touchPressureVariance = null;
+        if (forces.length >= 2) {
+            const fMean = forces.reduce((a, b) => a + b, 0) / forces.length;
+            touchPressureVariance = forces.reduce((s, f) => s + (f - fMean) ** 2, 0) / forces.length;
+        }
+        // Arc deviation
+        let arcDeviation = 1.0;
+        if (n >= 3) {
+            const first = events[0];
+            const last = events[n - 1];
+            const chord = Math.sqrt((last.x - first.x) ** 2 + (last.y - first.y) ** 2);
+            if (chord >= 10) {
+                arcDeviation = pathLength / chord;
             }
         }
         // Teleportation score
-        const teleportationScore = totalMoves > 0 ? teleports / totalMoves : 0;
-        // Acceleration asymmetry
-        const avgUp = countUp > 0 ? sumUp / countUp : 0;
-        const avgDown = countDown > 0 ? sumDown / countDown : 0;
-        let accelAsymmetry;
-        if (avgUp === 0 && avgDown === 0)
-            accelAsymmetry = 0;
-        else if (avgDown === 0)
-            accelAsymmetry = 100;
-        else
-            accelAsymmetry = avgUp / avgDown;
-        // Dwell-time variance (streaming)
-        let dwellTimeVariance = null;
-        if (dwellDurations.length >= 2) {
-            let sum = 0, sumSq = 0;
-            const n = dwellDurations.length;
-            for (let i = 0; i < n; i++) {
-                sum += dwellDurations[i];
-                sumSq += dwellDurations[i] * dwellDurations[i];
-            }
-            const mean = sum / n;
-            const v = (sumSq / n) - (mean * mean);
-            dwellTimeVariance = v < 0 ? 0 : v;
-        }
-        // Average velocity
-        const duration = events[events.length - 1].t - events[0].t;
-        const avgVelocity = duration > 0 ? pathLength / duration : 0;
-        // Agent Step Score: Ratio of Think-Act transitions to total moves (normalized)
-        const agentStepScore = totalMoves > 5 ? (thinkPauses + activeBursts) / totalMoves : 0;
-        // Path Hash: DJB2 hash of the unique coordinate sequence
-        // v3.4.2 Protection: Only hash significant paths (> 20px) to avoid twitch collisions.
-        let pathHash = '';
-        if (pathLength > 20) {
-            let hash = 5381;
-            for (let i = 0; i < events.length; i++) {
-                hash = ((hash << 5) + hash) + events[i].x;
-                hash = ((hash << 5) + hash) + events[i].y;
-            }
-            pathHash = (hash >>> 0).toString(16);
-        }
-        // Jerk entropy (needs velocity array — computed above)
-        const jerkEntropy = this._jerkEntropyFromVelocities(velocities);
-        // Excessive Smoothness Detection:
-        // We analyze the variance of Jerk (rate of change of accel).
-        // Cubic Beziers have linear jerk (constant derivative), meaning very low jerk variance.
-        let isExcessivelySmooth = false;
-        if (velocities.length > 10) {
-            let jerkSum = 0, jerkSumSq = 0, jerkCount = 0;
-            for (let i = 2; i < velocities.length - 1; i++) {
-                const a1 = velocities[i] - velocities[i - 1];
-                const a2 = velocities[i + 1] - velocities[i];
-                const jerk = Math.abs(a2 - a1);
-                jerkSum += jerk;
-                jerkSumSq += jerk * jerk;
-                jerkCount++;
-            }
-            const jerkMean = jerkSum / jerkCount;
-            const jerkVar = (jerkSumSq / jerkCount) - (jerkMean * jerkMean);
-            // If jerk is too consistent (low variance) relative to velocity, it's a spline.
-            if (jerkCount > 5 && jerkVar < 0.001)
-                isExcessivelySmooth = true;
-        }
-        // Biological Tremor Verification (v3.4.4 Calibration):
-        // Humans have 8-12Hz physiological oscillations.
-        // We count reversals AND measure their interval timing.
-        let microReversals = 0;
-        let bioIntervals = 0;
-        let lastReversalIdx = 0;
-        for (let i = 2; i < velocities.length - 1; i++) {
-            const dv1 = velocities[i] - velocities[i - 1];
-            const dv2 = velocities[i + 1] - velocities[i];
-            const amp = Math.abs(dv2 - dv1);
-            if (Math.sign(dv1) !== Math.sign(dv2) && amp > 0.05 && amp < 2.0) {
-                microReversals++;
-                const interval = i - lastReversalIdx;
-                // Human hand: At 60FPS (16.6ms), a 10Hz reversal occurs 
-                // every ~3 samples (half cycle at 10Hz = 50ms).
-                // Valid biological band: 2 to 5 samples between reversals.
-                if (interval >= 2 && interval <= 5) {
-                    bioIntervals++;
-                }
-                lastReversalIdx = i;
-            }
-        }
-        // v3.6.0 Hardened: Requires 10 intervals for high-confidence biological presence.
-        const isHumanVerified = bioIntervals >= 10;
-        const biologicalTremorScore = (velocities.length > 10) ? Math.min(bioIntervals / 10, 1.0) : 0;
+        const teleportationScore = totalSegments === 0 ? 0 : teleportCount / totalSegments;
         return {
-            mstLength: pathLength,
-            avgVelocity,
+            pathLength,
             accelAsymmetry,
             jerkEntropy,
             dwellTimeVariance,
             teleportationScore,
-            agentStepScore,
-            pathHash,
-            isExcessivelySmooth,
-            biologicalTremorScore,
-            isHumanVerified,
-            touchVariance: this.calculateTouchVariance(events),
-            arcDeviation: this.calculateArcDeviation(events, pathLength),
-            eventClumpingVariance: this.calculateEventClumping(events)
+            eventClumping,
+            agentCadenceDetected,
+            touchPressureVariance,
+            arcDeviation,
+            pathHash: hash.toString(16),
+            maxVelocity,
+            meanVelocity: velocityCount > 0 ? velocitySum / velocityCount : 0,
+            untrustedEventCount: untrustedCount,
+            totalEventCount: n,
         };
     }
-    /** Internal helper: compute jerk entropy from pre-computed velocity array. */
+    /**
+     * Internal: compute jerk entropy from pre-calculated velocities.
+     * Used by extractFeatures to avoid recalculating velocities.
+     */
     _jerkEntropyFromVelocities(velocities) {
         if (velocities.length < 5)
-            return null;
-        // Build accel array from velocities (need dt information — approximated in extractFeatures)
-        // For entropy we use the already-built accels inline
-        // This is called only from extractFeatures — unit tests call calculateJerkEntropy directly.
-        // We reuse the same S2 structure function logic but on the velocity differences as proxy.
-        let s2_lag1 = 0;
-        const n = velocities.length;
-        for (let i = 0; i < n - 1; i++) {
-            const diff = velocities[i + 1] - velocities[i];
-            s2_lag1 += diff * diff;
-        }
-        s2_lag1 /= (n - 1);
-        const lag = Math.min(4, Math.floor(n / 2));
-        if (lag < 2)
-            return null;
-        let s2_lagN = 0;
-        for (let i = 0; i < n - lag; i++) {
-            const diff = velocities[i + lag] - velocities[i];
-            s2_lagN += diff * diff;
-        }
-        s2_lagN /= (n - lag);
-        if (s2_lag1 === 0 || s2_lagN === 0)
             return 0;
-        return (Math.log(s2_lagN) - Math.log(s2_lag1)) / (Math.log(lag) - Math.log(1));
+        const accels = [];
+        for (let i = 1; i < velocities.length; i++) {
+            accels.push(velocities[i] - velocities[i - 1]);
+        }
+        if (accels.length < 4)
+            return 0;
+        const lag = Math.min(4, Math.floor(accels.length / 2));
+        let sfSum = 0, sfCount = 0;
+        for (let i = 0; i < accels.length - lag; i++) {
+            const diff = accels[i + lag] - accels[i];
+            sfSum += diff * diff;
+            sfCount++;
+        }
+        if (sfCount === 0)
+            return 0;
+        const sf = sfSum / sfCount;
+        let sf1Sum = 0, sf1Count = 0;
+        for (let i = 0; i < accels.length - 1; i++) {
+            const diff = accels[i + 1] - accels[i];
+            sf1Sum += diff * diff;
+            sf1Count++;
+        }
+        if (sf1Count === 0 || sf1Sum === 0)
+            return 0;
+        const sf1 = sf1Sum / sf1Count;
+        if (sf <= 0 || sf1 <= 0)
+            return 0;
+        return Math.log(sf / sf1) / Math.log(lag);
     }
 }
 exports.BehavioralAnalyzer = BehavioralAnalyzer;

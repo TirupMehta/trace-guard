@@ -1,7 +1,7 @@
 {
   "name": "trace-guard",
-  "version": "3.7.0",
-  "description": "Zero-setup, autonomous AI-agent detection via behavioral entropy and physiological signatures.",
+  "version": "3.8.0",
+  "description": "Zero-config adversarial AI-agent firewall using hardware attestation, logic traps, and environment gaslighting.",
   "main": "dist/src/index.js",
   "types": "dist/src/index.d.ts",
   "repository": {
@@ -47,6 +47,7 @@
     "@types/jest": "^30.0.0",
     "@types/node": "^25.6.0",
     "jest": "^30.3.0",
+    "playwright": "^1.62.1",
     "ts-jest": "^29.4.9",
     "typescript": "^5.6.3"
   }
